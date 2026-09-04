@@ -4,7 +4,7 @@
 
 **Goal:** Add a `/mentors` page to the Teacher CRM listing mentors (name, coordinator/רכז, phone, email) with add/edit/delete, backed by a new Supabase `mentors` table.
 
-**Architecture:** Follows the existing `Contacts.jsx` pattern exactly — a single page component that talks directly to Supabase from the frontend (no backend route), with inline `AddMentorModal`/`EditMentorModal` components in the same file. New nav entry and route wire it into the existing `Layout`.
+**Architecture:** Follows the existing `Contacts.jsx` pattern — a single page component that talks directly to Supabase from the frontend (no backend route), with a shared `MentorModal` component (driven by `title`/`initial`/`onSubmit` props) in the same file, used for both add and edit. New nav entry and route wire it into the existing `Layout`.
 
 **Tech Stack:** React 19 + react-router-dom 7, Supabase JS client (anon key, no auth), Tailwind CSS. No test framework exists in this project (no jest/vitest, no existing test files) — verification steps in this plan are manual (dev server + browser + Supabase check), matching the codebase's existing convention.
 

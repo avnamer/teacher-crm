@@ -37,6 +37,7 @@ export default function VoiceLog() {
   }
 
   async function analyze() {
+    if (analysis && !window.confirm('כבר יש כאן סיכום — לסכם מחדש ולאבד שינויים שערכת?')) return
     setAnalyzing(true)
     setAnalyzeError(null)
     try {
@@ -122,6 +123,16 @@ export default function VoiceLog() {
     }
   }
 
+  function startNewCall() {
+    setAnalysis(null)
+    setAnalyzeError(null)
+    setSaveResult(null)
+    setSelectedTeacherId(null)
+    setOverrideMatch(false)
+    setManualSearch('')
+    start()
+  }
+
   const matchResult = analysis ? matchTeacher(analysis.teacher_name_spoken, teachers) : { certain: null, candidates: [] }
   const filteredManual = manualSearch.trim()
     ? teachers.filter(t => t.name.includes(manualSearch.trim()))
@@ -145,7 +156,7 @@ export default function VoiceLog() {
 
       <div className="flex justify-center">
         <button
-          onClick={listening ? stop : start}
+          onClick={listening ? stop : startNewCall}
           className={`w-32 h-32 rounded-full text-white text-lg font-semibold shadow-lg transition-colors ${
             listening ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
           }`}

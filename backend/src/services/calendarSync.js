@@ -172,3 +172,45 @@ export async function syncCalendarMeetings() {
 
   return { added, skipped, unmatched }
 }
+
+// ─── Create a calendar event for a call-log action item ───────────────────
+
+export async function createCalendarEvent({ title, date, notes }) {
+  const tokens = loadTokens()
+  if (!tokens) {
+    const err = new Error('לא נמצאו טוקנים של Google — בצע אימות תחילה')
+    err.code = 'NO_TOKENS'
+    throw err
+  }
+  if (!tokens.scope || !tokens.scope.includes('calendar.events')) {
+    const err = new Error('אין הרשאת כתיבה ליומן — יש להתחבר מחדש ל-Google')
+    err.code = 'MISSING_SCOPE'
+    throw err
+  }
+
+  const auth = getOAuth2Client()
+  auth.setCredentials(tokens)
+
+  if (tokens.expiry_date && Date.now() > tokens.expiry_date - 60000) {
+    const { credentials } = await auth.refreshAccessToken()
+    saveTokens(credentials)
+    auth.setCredentials(credentials)
+  }
+
+  const calendar = google.calendar({ version: 'v3', auth })
+  const nextDay = new Date(date)
+  nextDay.setDate(nextDay.getDate() + 1)
+  const endDate = nextDay.toISOString().slice(0, 10)
+
+  const { data } = await calendar.events.insert({
+    calendarId: 'primary',
+    requestBody: {
+      summary: title,
+      description: notes || '',
+      start: { date },
+      end: { date: endDate },
+    },
+  })
+
+  return { eventId: data.id }
+}

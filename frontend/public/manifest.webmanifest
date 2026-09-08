@@ -1,0 +1,14 @@
+{
+  "name": "Tech-School CRM",
+  "short_name": "Tech-School CRM",
+  "description": "מערכת ניהול קשר עם מורים",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "dir": "rtl",
+  "lang": "he",
+  "icons": [
+    { "src": "/pwa-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

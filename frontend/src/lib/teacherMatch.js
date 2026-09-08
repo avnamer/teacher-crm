@@ -43,7 +43,7 @@ export function matchTeacher(spokenName, teachers) {
     return { certain: certain[0].teacher, candidates: [] }
   }
   if (certain.length > 1) {
-    return { certain: null, candidates: certain.map(s => s.teacher) }
+    return { certain: null, candidates: certain.slice(0, MAX_CANDIDATES).map(s => s.teacher) }
   }
 
   const loose = scored.filter(s => s.score >= CANDIDATE_THRESHOLD).slice(0, MAX_CANDIDATES)

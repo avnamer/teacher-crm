@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // Whisper-based implementation later without touching any consumer —
 // the returned interface (supported, listening, transcript, start, stop,
 // reset, setTranscript, error) is the contract callers rely on.
+// Note: setTranscript is for editing the transcript while NOT listening
+// (e.g. a manual correction after stopping) — calling it mid-listen will be
+// overwritten by the next speech result, since transcript is otherwise
+// derived from the recognition engine's own accumulated output.
 export function useSpeechToText({ lang = 'he-IL' } = {}) {
   const [supported] = useState(() => Boolean(
     typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -50,13 +54,18 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   }, [supported, lang])
 
   const start = useCallback(() => {
-    if (!recognitionRef.current) return
+    if (!recognitionRef.current || listening) return
     setError(null)
     finalTextRef.current = ''
     setTranscript('')
-    recognitionRef.current.start()
-    setListening(true)
-  }, [])
+    try {
+      recognitionRef.current.start()
+      setListening(true)
+    } catch {
+      // Native SpeechRecognition throws if start() is called while already running
+      // (e.g. a double-click racing the onend callback) — ignore, state stays unchanged.
+    }
+  }, [listening])
 
   const stop = useCallback(() => {
     recognitionRef.current?.stop()

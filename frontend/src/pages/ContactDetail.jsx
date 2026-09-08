@@ -152,7 +152,7 @@ export default function ContactDetail() {
 
       {/* Interaction history */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">היסטוריית אינטראקציות</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">היסטוריית אינטראקציות ויומן</h2>
         {interactions.length === 0 ? (
           <p className="text-gray-500 text-center py-4">אין אינטראקציות</p>
         ) : (
@@ -162,12 +162,12 @@ export default function ContactDetail() {
                 <span className="text-lg">{typeIcon(i.type)}</span>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">{typeLabel(i.type)}</span>
+                    <span className="text-sm font-medium text-gray-700">{typeLabel(i.type, i.metadata)}</span>
                     <span className="text-xs text-gray-400">
                       {new Date(i.created_at).toLocaleString('he-IL')}
                     </span>
                   </div>
-                  {i.content && <p className="text-sm text-gray-600 mt-1">{i.content}</p>}
+                  {i.content && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{i.content}</p>}
                 </div>
               </div>
             ))}
@@ -221,9 +221,10 @@ function InfoRow({ label, value, dir }) {
 }
 
 function typeIcon(type) {
-  return { whatsapp_sent: '📤', whatsapp_received: '📥', meeting: '🤝', phone_call: '📞' }[type] || '📋'
+  return { whatsapp_sent: '📤', whatsapp_received: '📥', meeting: '🤝', phone_call: '📞', journal: '📝' }[type] || '📋'
 }
-function typeLabel(type) {
+function typeLabel(type, metadata) {
+  if (type === 'journal') return metadata?.column_label || 'רשומת יומן'
   return { whatsapp_sent: 'הודעה נשלחה', whatsapp_received: 'הודעה התקבלה', meeting: 'פגישה', phone_call: 'שיחת טלפון' }[type] || type
 }
 function statusColor(s) {

@@ -21,7 +21,7 @@ CREATE TABLE contacts (
 CREATE TABLE interactions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE NOT NULL,
-  type TEXT CHECK (type IN ('whatsapp_sent', 'whatsapp_received', 'meeting', 'phone_call')) NOT NULL,
+  type TEXT CHECK (type IN ('whatsapp_sent', 'whatsapp_received', 'meeting', 'phone_call', 'journal')) NOT NULL,
   content TEXT,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT now()
@@ -62,7 +62,8 @@ CREATE TABLE settings (
   birthday_group_jid TEXT,
   meeting_alert_days INT DEFAULT 30,
   message_send_delay_ms INT DEFAULT 3000,
-  monday_board_id TEXT
+  monday_board_id TEXT,
+  contacts_columns JSONB DEFAULT '[]'
 );
 
 -- 6. טבלת WhatsApp Auth (Baileys session)
@@ -161,6 +162,12 @@ CREATE POLICY "Public full access to message_templates" ON message_templates FOR
 CREATE POLICY "Public full access to scheduled_messages" ON scheduled_messages FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public full access to mentors" ON mentors FOR ALL USING (true) WITH CHECK (true);
 
+-- מדיניות ציבורית לעדכון הגדרות (אין auth בפרויקט — בלי זה, כל שמירה בדף ההגדרות נכשלת בשקט)
+CREATE POLICY "Public can update settings" ON settings FOR UPDATE USING (true) WITH CHECK (true);
+
+-- מדיניות ציבורית לאינטראקציות (אין auth בפרויקט — נדרש לתאי יומן/אירועים בטבלת אנשי קשר)
+CREATE POLICY "Public full access to interactions" ON interactions FOR ALL USING (true) WITH CHECK (true);
+
 -- הכנס שורת הגדרות ברירת מחדל
 INSERT INTO settings (id) VALUES ('global');
 
@@ -169,3 +176,15 @@ INSERT INTO message_templates (name, body_male, body_female) VALUES
   ('הזמנה לאקתון', 'שלום {{name}}, אנחנו שמחים להזמין אותך לאקתון שיתקיים בתאריך {{hackathon_date}} בבית הספר {{school}}. נשמח לראותך!', 'שלום {{name}}, אנחנו שמחים להזמין אותך לאקתון שיתקיים בתאריך {{hackathon_date}} בבית הספר {{school}}. נשמח לראותך!'),
   ('תזכורת פגישה', 'היי {{name}}, רציתי להזכיר לך שיש לנו פגישה מחר. מחכה לראותך!', 'היי {{name}}, רציתי להזכיר לך שיש לנו פגישה מחר. מחכה לראותך!'),
   ('יום הולדת', 'יום הולדת שמח {{name}}! 🎂🎉 מאחל לך שנה מלאה בהצלחות!', 'יום הולדת שמח {{name}}! 🎂🎉 מאחלת לך שנה מלאה בהצלחות!');
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: עמודות מותאמות אישית בדף אנשי קשר (הרץ פעם אחת אם הטבלה כבר קיימת)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS contacts_columns JSONB DEFAULT '[]';
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: עמודת יומן/אירועים בדף אנשי קשר (הרץ פעם אחת אם הטבלה כבר קיימת)
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
+ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
+  CHECK (type IN ('whatsapp_sent', 'whatsapp_received', 'meeting', 'phone_call', 'journal'));

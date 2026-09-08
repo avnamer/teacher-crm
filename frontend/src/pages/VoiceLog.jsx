@@ -84,30 +84,39 @@ export default function VoiceLog() {
       })
       if (error) throw error
 
-      let calendarWarning = null
-      const teacherName = teachers.find(t => t.id === selectedTeacherId)?.name || ''
-      for (const item of analysis.action_items) {
-        if (!item.due_date) continue
-        try {
-          await backendFetch('/api/google/create-event', {
-            method: 'POST',
-            body: JSON.stringify({
-              title: `${item.text} — ${teacherName}`,
-              date: item.due_date,
-              notes: analysis.summary,
-            }),
+      const datedItems = analysis.action_items.filter(item => item.due_date)
+      const calendarFailureCount = (
+        await Promise.allSettled(
+          datedItems.map(item => {
+            const teacherName = teachers.find(t => t.id === selectedTeacherId)?.name || ''
+            return backendFetch('/api/google/create-event', {
+              method: 'POST',
+              body: JSON.stringify({
+                title: `${item.text} — ${teacherName}`,
+                date: item.due_date,
+                notes: analysis.summary,
+              }),
+            })
           })
-        } catch (err) {
-          calendarWarning = 'השיחה נשמרה, אך יצירת אירוע ביומן נכשלה: ' + err.message
-        }
-      }
+        )
+      ).filter(r => r.status === 'rejected').length
+
+      const calendarWarning = calendarFailureCount === 0
+        ? null
+        : calendarFailureCount === datedItems.length
+          ? 'השיחה נשמרה, אך יצירת האירועים ביומן נכשלה'
+          : `השיחה נשמרה, אך ${calendarFailureCount} מתוך ${datedItems.length} אירועים ביומן לא נוצרו`
 
       setSaveResult({ ok: true, calendarWarning })
       reset()
       setAnalysis(null)
       setSelectedTeacherId(null)
+      setManualSearch('')
     } catch (err) {
-      setSaveResult({ ok: false, message: 'שמירה נכשלה: ' + err.message })
+      setSaveResult({
+        ok: false,
+        message: 'שמירה נכשלה: ' + (err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message),
+      })
     } finally {
       setSaving(false)
     }
@@ -208,7 +217,8 @@ export default function VoiceLog() {
                   <select
                     value={selectedTeacherId ?? ''}
                     onChange={(e) => setSelectedTeacherId(e.target.value || null)}
-                    className="w-full border border-gray-300 rounded-lg p-2"
+                    disabled={saving}
+                    className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
                   >
                     <option value="">בחר/י מורה...</option>
                     {matchResult.candidates.map(t => (
@@ -221,14 +231,16 @@ export default function VoiceLog() {
                   value={manualSearch}
                   onChange={(e) => setManualSearch(e.target.value)}
                   placeholder="חיפוש ידני לפי שם..."
-                  className="w-full border border-gray-300 rounded-lg p-2 text-right"
+                  disabled={saving}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-right disabled:opacity-60"
                   dir="rtl"
                 />
                 {filteredManual.length > 0 && (
                   <select
                     value={selectedTeacherId ?? ''}
                     onChange={(e) => setSelectedTeacherId(e.target.value || null)}
-                    className="w-full border border-gray-300 rounded-lg p-2"
+                    disabled={saving}
+                    className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
                   >
                     <option value="">בחר/י מורה...</option>
                     {filteredManual.map(t => (
@@ -246,7 +258,8 @@ export default function VoiceLog() {
               value={analysis.summary}
               onChange={(e) => setAnalysis({ ...analysis, summary: e.target.value })}
               rows={3}
-              className="w-full border border-gray-300 rounded-lg p-2 text-right"
+              disabled={saving}
+              className="w-full border border-gray-300 rounded-lg p-2 text-right disabled:opacity-60"
               dir="rtl"
             />
           </div>

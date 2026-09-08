@@ -142,7 +142,7 @@ export default function VoiceLog() {
                 <p className="text-green-700 font-medium">✓ {matchResult.certain.name}</p>
                 <button
                   type="button"
-                  onClick={() => setOverrideMatch(true)}
+                  onClick={() => { setOverrideMatch(true); setSelectedTeacherId(null) }}
                   className="text-sm text-blue-600 underline"
                 >
                   לא נכון? החלף/י מורה

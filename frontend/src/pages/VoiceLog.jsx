@@ -16,6 +16,8 @@ export default function VoiceLog() {
   const [selectedTeacherId, setSelectedTeacherId] = useState(null)
   const [manualSearch, setManualSearch] = useState('')
   const [overrideMatch, setOverrideMatch] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState(null) // { ok, calendarWarning? } | { ok: false, message }
 
   useEffect(() => {
     loadMyTeachers()
@@ -57,6 +59,58 @@ export default function VoiceLog() {
     setAnalyzeError(null)
     setAnalysis({ summary: transcript, action_items: [], mentioned_dates: [], teacher_name_spoken: null })
     setSelectedTeacherId(null)
+  }
+
+  async function confirmAndSave() {
+    if (!selectedTeacherId) {
+      alert('יש לבחור מורה לפני השמירה')
+      return
+    }
+    setSaving(true)
+    setSaveResult(null)
+    try {
+      const { error } = await supabase.from('interactions').insert({
+        contact_id: selectedTeacherId,
+        type: 'phone_call',
+        content: analysis.summary,
+        metadata: {
+          transcript,
+          action_items: analysis.action_items,
+          mentioned_dates: analysis.mentioned_dates,
+          teacher_name_spoken: analysis.teacher_name_spoken,
+          confirmed_by_user: true,
+          source: 'voice_pwa',
+        },
+      })
+      if (error) throw error
+
+      let calendarWarning = null
+      const teacherName = teachers.find(t => t.id === selectedTeacherId)?.name || ''
+      for (const item of analysis.action_items) {
+        if (!item.due_date) continue
+        try {
+          await backendFetch('/api/google/create-event', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: `${item.text} — ${teacherName}`,
+              date: item.due_date,
+              notes: analysis.summary,
+            }),
+          })
+        } catch (err) {
+          calendarWarning = 'השיחה נשמרה, אך יצירת אירוע ביומן נכשלה: ' + err.message
+        }
+      }
+
+      setSaveResult({ ok: true, calendarWarning })
+      reset()
+      setAnalysis(null)
+      setSelectedTeacherId(null)
+    } catch (err) {
+      setSaveResult({ ok: false, message: 'שמירה נכשלה: ' + err.message })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const matchResult = analysis ? matchTeacher(analysis.teacher_name_spoken, teachers) : { certain: null, candidates: [] }
@@ -210,7 +264,25 @@ export default function VoiceLog() {
               </ul>
             </div>
           )}
+
+          <button
+            onClick={confirmAndSave}
+            disabled={saving || !selectedTeacherId}
+            className="w-full py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-40"
+          >
+            {saving ? 'שומר...' : 'אשר ושמור'}
+          </button>
         </div>
+      )}
+
+      {saveResult?.ok && (
+        <div className="text-center text-green-700 space-y-1">
+          <p>✓ השיחה נשמרה בהצלחה</p>
+          {saveResult.calendarWarning && <p className="text-orange-600 text-sm">{saveResult.calendarWarning}</p>}
+        </div>
+      )}
+      {saveResult && !saveResult.ok && (
+        <p className="text-center text-red-600">{saveResult.message}</p>
       )}
     </div>
   )

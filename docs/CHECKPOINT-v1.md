@@ -45,6 +45,11 @@ git -C "/c/Users/Avner/Pictures/.claude/worktrees/affectionate-pare/teacher-crm"
 - **WhatsApp backend** is not implemented in this branch (`backend/server.js` only has `/api/google` + `/api/health`) — the WhatsApp page always shows "disconnected". Not something today's work touched or broke.
 - **Google Calendar tokens** (`backend/.google-tokens.json`) are stored on local disk — fine for local dev, but won't survive a redeploy on most hosting platforms. Worth revisiting before going online (see "Online deployment" below).
 - **Online deployment** (frontend on Netlify — `frontend/netlify.toml` already exists — backend on a small Node host) was requested but not yet done; picking this back up is the natural next step.
+- **WhatsApp Desktop scanning (future idea, not scoped yet):** scan WhatsApp conversations on the computer to auto-log past correspondence with teachers into the CRM. Not designed yet — needs its own brainstorm (WhatsApp Desktop has no official API; would likely need either WhatsApp Web automation/scraping or manual export). Raised 2026-09-08 alongside the voice call logging feature.
+
+## Next feature: voice call logging (PWA)
+
+Planning doc for the next phase — logging phone calls with teachers via voice-to-text on mobile, auto-summarized and matched to the right teacher — is at [VOICE-CRM-PLAN.md](VOICE-CRM-PLAN.md). It maps cleanly onto the existing `contacts` + `interactions` tables (no schema changes needed; `interactions.type = 'phone_call'` already exists).
 
 ## Monday.com skill note
 

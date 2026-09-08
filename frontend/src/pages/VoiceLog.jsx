@@ -15,6 +15,7 @@ export default function VoiceLog() {
   const [analysis, setAnalysis] = useState(null) // { summary, action_items, mentioned_dates, teacher_name_spoken }
   const [selectedTeacherId, setSelectedTeacherId] = useState(null)
   const [manualSearch, setManualSearch] = useState('')
+  const [overrideMatch, setOverrideMatch] = useState(false)
 
   useEffect(() => {
     loadMyTeachers()
@@ -44,14 +45,16 @@ export default function VoiceLog() {
       setAnalysis(result)
       const { certain } = matchTeacher(result.teacher_name_spoken, teachers)
       setSelectedTeacherId(certain?.id ?? null)
+      setOverrideMatch(false)
     } catch (err) {
-      setAnalyzeError(err.message)
+      setAnalyzeError(err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message)
     } finally {
       setAnalyzing(false)
     }
   }
 
   function saveWithoutSummary() {
+    setAnalyzeError(null)
     setAnalysis({ summary: transcript, action_items: [], mentioned_dates: [], teacher_name_spoken: null })
     setSelectedTeacherId(null)
   }
@@ -134,8 +137,17 @@ export default function VoiceLog() {
         <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-white shadow-sm">
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">מורה שזוהה</label>
-            {matchResult.certain && selectedTeacherId === matchResult.certain.id ? (
-              <p className="text-green-700 font-medium">✓ {matchResult.certain.name}</p>
+            {matchResult.certain && selectedTeacherId === matchResult.certain.id && !overrideMatch ? (
+              <div className="flex items-center gap-2">
+                <p className="text-green-700 font-medium">✓ {matchResult.certain.name}</p>
+                <button
+                  type="button"
+                  onClick={() => setOverrideMatch(true)}
+                  className="text-sm text-blue-600 underline"
+                >
+                  לא נכון? החלף/י מורה
+                </button>
+              </div>
             ) : (
               <div className="space-y-2">
                 {matchResult.candidates.length > 0 && (

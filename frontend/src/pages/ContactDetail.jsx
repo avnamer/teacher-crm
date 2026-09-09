@@ -24,6 +24,7 @@ export default function ContactDetail() {
   const [loading, setLoading] = useState(true)
   const [editingInteractionId, setEditingInteractionId] = useState(null)
   const [editContent, setEditContent] = useState('')
+  const [expandedIds, setExpandedIds] = useState(() => new Set())
 
   useEffect(() => {
     loadContact()
@@ -71,6 +72,15 @@ export default function ContactDetail() {
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message)
     }
+  }
+
+  function toggleExpand(id) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   function startEditInteraction(i) {
@@ -194,49 +204,68 @@ export default function ContactDetail() {
         {interactions.length === 0 ? (
           <p className="text-gray-500 text-center py-4">אין אינטראקציות</p>
         ) : (
-          <div className="space-y-3">
-            {interactions.map(i => (
-              <div key={i.id} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50">
-                <span className="text-lg">{typeIcon(i.type)}</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">
-                      {i.type === 'journal' ? dateWithDaysAgo(i.created_at) : typeLabel(i.type, i.metadata)}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">
-                        {new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      {editingInteractionId !== i.id && (
-                        <button onClick={() => startEditInteraction(i)}
-                          className="text-xs text-gray-400 hover:text-blue-600" title="ערוך תוכן">
-                          ✏️
-                        </button>
+          <div className="space-y-2">
+            {interactions.map(i => {
+              const expanded = expandedIds.has(i.id)
+              const dateBased = i.type === 'journal' || i.type === 'meeting'
+              const title = dateBased ? dateWithDaysAgo(i.created_at) : typeLabel(i.type, i.metadata)
+              const timeLabel = dateBased
+                ? new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+                : new Date(i.created_at).toLocaleString('he-IL')
+              const attendees = i.metadata?.attendees
+              return (
+                <div key={i.id} className="rounded-lg bg-gray-50 overflow-hidden">
+                  <div className="flex items-center gap-2 p-3">
+                    <span className="text-lg shrink-0">{typeIcon(i.type)}</span>
+                    <span className="text-sm font-medium text-gray-700 shrink-0 whitespace-nowrap">{title}</span>
+                    {i.content ? (
+                      <span className="flex-1 min-w-0 truncate text-sm text-gray-400">{i.content}</span>
+                    ) : (
+                      <span className="flex-1" />
+                    )}
+                    <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{timeLabel}</span>
+                    {i.content && (
+                      <button onClick={() => toggleExpand(i.id)}
+                        className="text-xs text-blue-600 hover:underline shrink-0 whitespace-nowrap">
+                        {expanded ? 'הצג פחות' : 'המשך קריאה'}
+                      </button>
+                    )}
+                  </div>
+                  {expanded && (
+                    <div className="px-3 pb-3">
+                      {attendees?.length > 0 && (
+                        <p className="text-xs text-gray-400 mb-1">השתתפו גם: {attendees.join(', ')}</p>
+                      )}
+                      {editingInteractionId === i.id ? (
+                        <div className="space-y-2">
+                          <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                            rows={3}
+                            className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" />
+                          <div className="flex gap-2">
+                            <button onClick={() => saveInteractionContent(i)}
+                              className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                              שמור
+                            </button>
+                            <button onClick={cancelEditInteraction}
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
+                              ביטול
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm text-gray-600 whitespace-pre-wrap flex-1">{i.content}</p>
+                          <button onClick={() => startEditInteraction(i)}
+                            className="text-xs text-gray-400 hover:text-blue-600 shrink-0" title="ערוך תוכן">
+                            ✏️
+                          </button>
+                        </div>
                       )}
                     </div>
-                  </div>
-                  {editingInteractionId === i.id ? (
-                    <div className="mt-1 space-y-2">
-                      <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-                        rows={3}
-                        className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" />
-                      <div className="flex gap-2">
-                        <button onClick={() => saveInteractionContent(i)}
-                          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
-                          שמור
-                        </button>
-                        <button onClick={cancelEditInteraction}
-                          className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
-                          ביטול
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    i.content && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{i.content}</p>
                   )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

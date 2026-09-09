@@ -2,6 +2,17 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 
+function daysSince(dateStr) {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+}
+
+function dateWithDaysAgo(dateStr) {
+  const days = daysSince(dateStr)
+  const dateLabel = new Date(dateStr).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  const daysLabel = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+  return `${dateLabel} (${daysLabel})`
+}
+
 export default function ContactDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -162,9 +173,11 @@ export default function ContactDetail() {
                 <span className="text-lg">{typeIcon(i.type)}</span>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">{typeLabel(i.type, i.metadata)}</span>
+                    <span className="text-sm font-medium text-gray-700">
+                      {i.type === 'journal' ? dateWithDaysAgo(i.created_at) : typeLabel(i.type, i.metadata)}
+                    </span>
                     <span className="text-xs text-gray-400">
-                      {new Date(i.created_at).toLocaleString('he-IL')}
+                      {new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                   {i.content && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{i.content}</p>}

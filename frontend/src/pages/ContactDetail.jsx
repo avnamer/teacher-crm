@@ -22,6 +22,8 @@ export default function ContactDetail() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
   const [loading, setLoading] = useState(true)
+  const [editingInteractionId, setEditingInteractionId] = useState(null)
+  const [editContent, setEditContent] = useState('')
 
   useEffect(() => {
     loadContact()
@@ -66,6 +68,31 @@ export default function ContactDetail() {
       if (error) throw error
       setContact(form)
       setEditing(false)
+    } catch (err) {
+      alert('שגיאה בשמירה: ' + err.message)
+    }
+  }
+
+  function startEditInteraction(i) {
+    setEditingInteractionId(i.id)
+    setEditContent(i.content || '')
+  }
+
+  function cancelEditInteraction() {
+    setEditingInteractionId(null)
+    setEditContent('')
+  }
+
+  async function saveInteractionContent(i) {
+    try {
+      const { error } = await supabase
+        .from('interactions')
+        .update({ content: editContent })
+        .eq('id', i.id)
+      if (error) throw error
+      setInteractions(prev => prev.map(x => (x.id === i.id ? { ...x, content: editContent } : x)))
+      setEditingInteractionId(null)
+      setEditContent('')
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message)
     }
@@ -176,11 +203,37 @@ export default function ContactDetail() {
                     <span className="text-sm font-medium text-gray-700">
                       {i.type === 'journal' ? dateWithDaysAgo(i.created_at) : typeLabel(i.type, i.metadata)}
                     </span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400">
+                        {new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {editingInteractionId !== i.id && (
+                        <button onClick={() => startEditInteraction(i)}
+                          className="text-xs text-gray-400 hover:text-blue-600" title="ערוך תוכן">
+                          ✏️
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {i.content && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{i.content}</p>}
+                  {editingInteractionId === i.id ? (
+                    <div className="mt-1 space-y-2">
+                      <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                        rows={3}
+                        className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" />
+                      <div className="flex gap-2">
+                        <button onClick={() => saveInteractionContent(i)}
+                          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                          שמור
+                        </button>
+                        <button onClick={cancelEditInteraction}
+                          className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
+                          ביטול
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    i.content && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{i.content}</p>
+                  )}
                 </div>
               </div>
             ))}

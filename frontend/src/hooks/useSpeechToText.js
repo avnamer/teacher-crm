@@ -74,8 +74,11 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   const start = useCallback(() => {
     if (!recognitionRef.current || listening) return
     setError(null)
-    finalPhrasesRef.current = []
-    setTranscript('')
+    // Deliberately does not clear finalPhrasesRef/transcript: the browser's
+    // SpeechRecognition can auto-stop after a silence timeout mid-call, and
+    // pressing the mic button again should resume into the existing text,
+    // not erase it. Callers that want a genuinely fresh recording clear
+    // explicitly via reset() (see the "נקה" button and post-save reset).
     try {
       recognitionRef.current.start()
       setListening(true)

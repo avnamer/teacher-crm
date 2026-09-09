@@ -59,7 +59,10 @@ function formatDisplay(contact, col, journalMap) {
   if (col.source === 'journal') {
     const entry = journalMap?.[contact.id]?.[col.key]
     if (!entry) return '-'
-    return `${entry.content} (${new Date(entry.created_at).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })})`
+    const days = daysSince(entry.created_at)
+    const dateStr = new Date(entry.created_at).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+    return `${dateStr} (${daysStr})`
   }
   const value = getCellValue(contact, col)
   if (col.source === 'core' && col.key === 'gender') {

@@ -17,11 +17,12 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   const [error, setError] = useState(null)
   const recognitionRef = useRef(null)
   // A list of distinct finalized phrases, deduplicated by content rather than
-  // by result index. Some Android Chrome builds re-emit the ENTIRE cumulative
-  // final text as a new "final" result repeatedly (observed as the whole
-  // transcript looping continuously without new speech) — each repeat can
-  // land at a new result index, so index-based keying alone doesn't catch it.
-  // Skipping a phrase identical to the last one recorded does.
+  // by result index — some Android Chrome builds silently restart their
+  // recognition session between sentences (after a pause) and, on restart,
+  // report the ENTIRE text spoken so far plus the new bit as a single
+  // cumulative "final" result rather than just the new part. Comparing
+  // against accumulated content (not the browser's result index, which
+  // resets on restart) is what catches both that and simple re-fired repeats.
   const finalPhrasesRef = useRef([])
 
   useEffect(() => {
@@ -36,12 +37,20 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
       let interim = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript.trim()
-        if (event.results[i].isFinal) {
+        if (event.results[i].isFinal && text) {
           const phrases = finalPhrasesRef.current
-          if (text && phrases[phrases.length - 1] !== text) {
+          const soFar = phrases.join(' ')
+          if (text === phrases[phrases.length - 1]) {
+            // Exact repeat of the last phrase — engine re-fired it, ignore.
+          } else if (soFar && text.startsWith(soFar)) {
+            // Engine restarted its session and echoed everything said so far
+            // plus the new bit as one cumulative result — replace rather
+            // than append, or the old part would appear twice.
+            finalPhrasesRef.current = [text]
+          } else {
             phrases.push(text)
           }
-        } else {
+        } else if (!event.results[i].isFinal) {
           interim += text
         }
       }

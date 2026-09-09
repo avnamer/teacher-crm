@@ -91,6 +91,8 @@ export default function Contacts() {
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
   const [lastContactMap, setLastContactMap] = useState({}) // { [contactId]: latest created_at across all interactions }
   const [statsExpanded, setStatsExpanded] = useState(false)
+  const [pendingTasksMap, setPendingTasksMap] = useState({}) // { [contactId]: [{text, due_date}, ...] } — unresolved action items from phone-call logs
+  const [pendingTasksExpanded, setPendingTasksExpanded] = useState(false)
 
   useEffect(() => {
     loadContacts()
@@ -147,7 +149,7 @@ export default function Contacts() {
       if (error) throw error
       setContacts(data || [])
       const ids = (data || []).map(c => c.id)
-      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids)])
+      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids)])
     } catch (err) {
       console.error('Error loading contacts:', err)
     } finally {
@@ -172,6 +174,28 @@ export default function Contacts() {
       setLastContactMap(map)
     } catch (err) {
       console.error('Error loading last-contact dates:', err)
+    }
+  }
+
+  // Unresolved action items extracted from phone-call voice logs — surfaced as a follow-up indicator.
+  async function loadPendingTasks(contactIds) {
+    if (contactIds.length === 0) return
+    try {
+      const { data, error } = await supabase
+        .from('interactions')
+        .select('contact_id, metadata')
+        .eq('type', 'phone_call')
+        .in('contact_id', contactIds)
+      if (error) throw error
+      const map = {}
+      for (const row of data || []) {
+        const items = (row.metadata?.action_items || []).filter(item => !item.done)
+        if (items.length === 0) continue
+        map[row.contact_id] = [...(map[row.contact_id] || []), ...items]
+      }
+      setPendingTasksMap(map)
+    } catch (err) {
+      console.error('Error loading pending tasks:', err)
     }
   }
 
@@ -316,6 +340,13 @@ export default function Contacts() {
     <div className="space-y-4">
       <ContactStats buckets={buckets} expanded={statsExpanded} onToggle={() => setStatsExpanded(!statsExpanded)} />
 
+      <PendingTasksBanner
+        pendingTasksMap={pendingTasksMap}
+        contacts={contacts}
+        expanded={pendingTasksExpanded}
+        onToggle={() => setPendingTasksExpanded(!pendingTasksExpanded)}
+      />
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">אנשי קשר</h1>
         <div className="flex gap-2">
@@ -424,6 +455,14 @@ export default function Contacts() {
                             <Link to={`/contacts/${contact.id}`} className="text-blue-600 hover:underline font-medium">
                               {contact.name}
                             </Link>
+                            {pendingTasksMap[contact.id]?.length > 0 && (
+                              <span
+                                title={`${pendingTasksMap[contact.id].length} משימות פתוחות מתיעוד שיחה`}
+                                className="mr-1 text-amber-500"
+                              >
+                                ❗
+                              </span>
+                            )}
                             {contact.custom_fields?._manual_edit && (
                               <span title="נערך ידנית — מוגן מסנכרון Monday" className="mr-1 text-xs text-gray-400">✏️</span>
                             )}
@@ -554,6 +593,55 @@ function ContactStats({ buckets, expanded, onToggle }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Pending follow-up tasks banner (from voice-logged phone calls) ──
+function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
+  const entries = Object.entries(pendingTasksMap).filter(([, items]) => items.length > 0)
+  if (entries.length === 0) return null
+
+  return (
+    <div className="rounded-xl border p-4 bg-amber-50 border-amber-200">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">❗</span>
+          <span className="text-sm font-medium text-amber-800">
+            {entries.length} מורים עם משימות פתוחות מתיעוד שיחות טלפון
+          </span>
+        </div>
+        <button
+          onClick={onToggle}
+          className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          {expanded ? '▲ הסתר פירוט' : '▼ הצג פירוט'}
+        </button>
+      </div>
+
+      {expanded && (
+        <ul className="mt-3 space-y-2">
+          {entries.map(([contactId, items]) => {
+            const contact = contacts.find(c => c.id === contactId)
+            if (!contact) return null
+            return (
+              <li key={contactId} className="text-sm">
+                <Link to={`/contacts/${contactId}`} className="font-medium text-amber-800 hover:underline">
+                  {contact.name}
+                </Link>
+                <ul className="mr-4 list-disc text-amber-700">
+                  {items.map((item, i) => (
+                    <li key={i}>
+                      {item.text}
+                      {item.due_date && ` (עד ${new Date(item.due_date).toLocaleDateString('he-IL')})`}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )

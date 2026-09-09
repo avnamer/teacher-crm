@@ -93,6 +93,23 @@ export default function ContactDetail() {
     setEditContent('')
   }
 
+  async function toggleActionItem(interaction, itemIndex) {
+    const items = interaction.metadata.action_items.map((item, idx) =>
+      idx === itemIndex ? { ...item, done: !item.done } : item
+    )
+    const newMetadata = { ...interaction.metadata, action_items: items }
+    try {
+      const { error } = await supabase
+        .from('interactions')
+        .update({ metadata: newMetadata })
+        .eq('id', interaction.id)
+      if (error) throw error
+      setInteractions(prev => prev.map(x => (x.id === interaction.id ? { ...x, metadata: newMetadata } : x)))
+    } catch (err) {
+      alert('שגיאה בעדכון משימה: ' + err.message)
+    }
+  }
+
   async function saveInteractionContent(i) {
     try {
       const { error } = await supabase
@@ -213,18 +230,23 @@ export default function ContactDetail() {
                 ? new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
                 : new Date(i.created_at).toLocaleString('he-IL')
               const attendees = i.metadata?.attendees
+              const actionItems = i.metadata?.action_items || []
+              const pendingCount = actionItems.filter(item => !item.done).length
               return (
                 <div key={i.id} className="rounded-lg bg-gray-50 overflow-hidden">
                   <div className="flex items-center gap-2 p-3">
                     <span className="text-lg shrink-0">{typeIcon(i.type)}</span>
                     <span className="text-sm font-medium text-gray-700 shrink-0 whitespace-nowrap">{title}</span>
+                    {pendingCount > 0 && (
+                      <span className="shrink-0 text-amber-500" title={`${pendingCount} משימות פתוחות`}>❗</span>
+                    )}
                     {i.content ? (
                       <span className="flex-1 min-w-0 truncate text-sm text-gray-400">{i.content}</span>
                     ) : (
                       <span className="flex-1" />
                     )}
                     <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{timeLabel}</span>
-                    {i.content && (
+                    {(i.content || actionItems.length > 0) && (
                       <button onClick={() => toggleExpand(i.id)}
                         className="text-xs text-blue-600 hover:underline shrink-0 whitespace-nowrap">
                         {expanded ? 'הצג פחות' : 'המשך קריאה'}
@@ -235,6 +257,28 @@ export default function ContactDetail() {
                     <div className="px-3 pb-3">
                       {attendees?.length > 0 && (
                         <p className="text-xs text-gray-400 mb-1">השתתפו גם: {attendees.join(', ')}</p>
+                      )}
+                      {actionItems.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs font-medium text-amber-700 mb-1">משימות המשך:</p>
+                          <ul className="space-y-1">
+                            {actionItems.map((item, idx) => (
+                              <li key={idx} className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={!!item.done}
+                                  onChange={() => toggleActionItem(i, idx)}
+                                  className="w-4 h-4" />
+                                <span className={item.done ? 'line-through text-gray-400' : 'text-gray-700'}>
+                                  {item.text}
+                                </span>
+                                {item.due_date && (
+                                  <span className="text-xs text-gray-400">
+                                    📅 {new Date(item.due_date).toLocaleDateString('he-IL')}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                       {editingInteractionId === i.id ? (
                         <div className="space-y-2">

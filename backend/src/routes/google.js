@@ -24,7 +24,7 @@ router.get('/callback', async (req, res) => {
   try {
     const auth = getOAuth2Client()
     const { tokens } = await auth.getToken(code)
-    saveTokens(tokens)
+    await saveTokens(tokens)
     res.send('<h2>✅ אימות Google הושלם בהצלחה!</h2><p>אפשר לסגור את הטאב הזה ולחזור ל-CRM.</p>')
   } catch (err) {
     res.status(500).send('שגיאה בקבלת טוקן: ' + err.message)
@@ -32,8 +32,8 @@ router.get('/callback', async (req, res) => {
 })
 
 // GET /api/google/status — check if authorized
-router.get('/status', (_req, res) => {
-  const tokens = loadTokens()
+router.get('/status', async (_req, res) => {
+  const tokens = await loadTokens()
   res.json({ authorized: Boolean(tokens) })
 })
 

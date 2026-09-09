@@ -63,7 +63,8 @@ CREATE TABLE settings (
   meeting_alert_days INT DEFAULT 30,
   message_send_delay_ms INT DEFAULT 3000,
   monday_board_id TEXT,
-  contacts_columns JSONB DEFAULT '[]'
+  contacts_columns JSONB DEFAULT '[]',
+  google_calendar_tokens JSONB
 );
 
 -- 6. טבלת WhatsApp Auth (Baileys session)

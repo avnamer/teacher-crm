@@ -26,7 +26,9 @@ export async function analyzeCallTranscript(transcript) {
     messages: [{ role: 'user', content: transcript }],
   })
 
-  const text = response.content?.[0]?.text
+  // claude-sonnet-5 can return a leading `thinking` block before the `text`
+  // block, so the text isn't reliably at content[0] — find it by type instead.
+  const text = response.content?.find(block => block.type === 'text')?.text
   if (!text) throw new Error('תשובה ריקה מ-Claude')
 
   let parsed

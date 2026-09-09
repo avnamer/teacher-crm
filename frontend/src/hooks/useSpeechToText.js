@@ -16,7 +16,11 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState(null)
   const recognitionRef = useRef(null)
-  const finalTextRef = useRef('')
+  // Keyed by result index rather than appended, because the underlying speech
+  // engine (observed on Android Chrome) can silently restart mid-session and
+  // re-fire earlier indices as final again — appending would duplicate text
+  // repeatedly the longer a recording runs; overwriting by index does not.
+  const finalSegmentsRef = useRef({})
 
   useEffect(() => {
     if (!supported) return
@@ -31,12 +35,16 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript
         if (event.results[i].isFinal) {
-          finalTextRef.current += text + ' '
+          finalSegmentsRef.current[i] = text
         } else {
           interim += text
         }
       }
-      setTranscript((finalTextRef.current + interim).trim())
+      const finalText = Object.keys(finalSegmentsRef.current)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(key => finalSegmentsRef.current[key])
+        .join(' ')
+      setTranscript((finalText + ' ' + interim).trim())
     }
 
     recognition.onerror = (event) => {
@@ -56,7 +64,7 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   const start = useCallback(() => {
     if (!recognitionRef.current || listening) return
     setError(null)
-    finalTextRef.current = ''
+    finalSegmentsRef.current = {}
     setTranscript('')
     try {
       recognitionRef.current.start()
@@ -73,7 +81,7 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   }, [])
 
   const reset = useCallback(() => {
-    finalTextRef.current = ''
+    finalSegmentsRef.current = {}
     setTranscript('')
     setError(null)
   }, [])

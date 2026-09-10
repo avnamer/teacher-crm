@@ -312,7 +312,7 @@ export default function Contacts() {
 
   async function saveCell(contact, col, rawValue) {
     const payload = { custom_fields: { ...(contact.custom_fields || {}), _manual_edit: true } }
-    if (col.source === 'custom') {
+    if (col.source === 'custom' || col.source === 'task') {
       payload.custom_fields[col.key] = rawValue
     } else {
       payload[col.key] = rawValue || null
@@ -666,6 +666,26 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
 // ─── Editable table cell ──────────────────────────────────────────
 function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCancel, onSave }) {
   const editType = getEditType(col)
+
+  if (editType === 'task') {
+    const done = isTaskDone(contact, col)
+    return (
+      <button
+        onClick={() => onSave(!done)}
+        className="w-full flex items-center justify-center py-0.5"
+        title={done ? 'לחץ לביטול סימון' : 'לחץ לסימון כבוצע'}
+      >
+        <span
+          className={`w-5 h-5 rounded border flex items-center justify-center text-xs ${
+            done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 text-transparent'
+          }`}
+        >
+          ✓
+        </span>
+      </button>
+    )
+  }
+
   // Journal cells always start blank — writing in them adds a new dated entry, it never edits the last one.
   const rawValue = editType === 'journal' ? '' : getCellValue(contact, col)
   const [value, setValue] = useState(rawValue)

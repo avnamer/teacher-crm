@@ -85,14 +85,27 @@ function firstSentence(text) {
   return match ? match[0].trim() : trimmed
 }
 
-function formatDisplay(contact, col, journalMap) {
+// Short Hebrew label for a non-journal interaction type, used when it's more recent than
+// any manual journal entry — mirrors the labels in ContactDetail.jsx's typeLabel().
+function interactionTypeLabel(type) {
+  return { whatsapp_sent: 'הודעה נשלחה', whatsapp_received: 'הודעה התקבלה', meeting: 'פגישה', phone_call: 'שיחת טלפון' }[type] || type
+}
+
+function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
   if (col.source === 'task') return isTaskDone(contact, col) ? '✓' : ''
   if (col.source === 'journal') {
     const entry = journalMap?.[contact.id]?.[col.key]
-    if (!entry) return '-'
-    const days = daysSince(entry.created_at)
+    // The "last contact" column should reflect the true latest interaction, not just the
+    // latest manual journal note for this column — a phone call or WhatsApp message logged
+    // after the last journal entry is more recent and should take priority.
+    const latestOther = col.key === 'last_contact_journal' ? lastNonJournalMap?.[contact.id] : null
+    const useLatestOther = latestOther && (!entry || new Date(latestOther.created_at) > new Date(entry.created_at))
+    const source = useLatestOther ? latestOther : entry
+    if (!source) return '-'
+    const days = daysSince(source.created_at)
     const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
-    return `(${daysStr}) ${firstSentence(entry.content)}`
+    const prefix = useLatestOther ? `${interactionTypeLabel(latestOther.type)}: ` : ''
+    return `(${daysStr}) ${prefix}${firstSentence(source.content)}`
   }
   const value = getCellValue(contact, col)
   if (col.source === 'core' && col.key === 'gender') {
@@ -124,6 +137,7 @@ export default function Contacts() {
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
   const [lastContactMap, setLastContactMap] = useState({}) // { [contactId]: latest created_at across all interactions }
+  const [lastNonJournalMap, setLastNonJournalMap] = useState({}) // { [contactId]: latest {content, type, created_at} among non-journal interactions }
   const [expandedBucket, setExpandedBucket] = useState(null) // 'green' | 'orange' | 'red' | null
   const [pendingTasksMap, setPendingTasksMap] = useState({}) // { [contactId]: [{text, due_date}, ...] } — unresolved action items from phone-call logs
   const [pendingTasksExpanded, setPendingTasksExpanded] = useState(false)
@@ -202,15 +216,20 @@ export default function Contacts() {
     try {
       const { data, error } = await supabase
         .from('interactions')
-        .select('contact_id, created_at')
+        .select('contact_id, created_at, type, content')
         .in('contact_id', contactIds)
         .order('created_at', { ascending: false })
       if (error) throw error
       const map = {}
+      const nonJournalMap = {}
       for (const row of data || []) {
         if (!map[row.contact_id]) map[row.contact_id] = row.created_at
+        if (row.type !== 'journal' && !nonJournalMap[row.contact_id]) {
+          nonJournalMap[row.contact_id] = { content: row.content, type: row.type, created_at: row.created_at }
+        }
       }
       setLastContactMap(map)
+      setLastNonJournalMap(nonJournalMap)
     } catch (err) {
       console.error('Error loading last-contact dates:', err)
     }
@@ -552,6 +571,7 @@ export default function Contacts() {
                             contact={contact}
                             col={col}
                             journalMap={journalMap}
+                            lastNonJournalMap={lastNonJournalMap}
                             isEditing={editingCell?.contactId === contact.id && editingCell?.colKey === col.key}
                             onStartEdit={() => setEditingCell({ contactId: contact.id, colKey: col.key })}
                             onCancel={() => setEditingCell(null)}
@@ -815,7 +835,7 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
 }
 
 // ─── Editable table cell ──────────────────────────────────────────
-function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCancel, onSave }) {
+function EditableCell({ contact, col, journalMap, lastNonJournalMap, isEditing, onStartEdit, onCancel, onSave }) {
   const editType = getEditType(col)
   const [savingTask, setSavingTask] = useState(false)
   // Journal cells always start blank — writing in them adds a new dated entry, it never edits the last one.
@@ -857,7 +877,7 @@ function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCanc
   }
 
   if (!isEditing) {
-    const display = formatDisplay(contact, col, journalMap)
+    const display = formatDisplay(contact, col, journalMap, lastNonJournalMap)
     return (
       <button
         onClick={onStartEdit}

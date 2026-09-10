@@ -2,6 +2,17 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 
+function daysSince(dateStr) {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+}
+
+function dateWithDaysAgo(dateStr) {
+  const days = daysSince(dateStr)
+  const dateLabel = new Date(dateStr).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
+  const daysLabel = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+  return `${dateLabel} (${daysLabel})`
+}
+
 export default function ContactDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -11,6 +22,10 @@ export default function ContactDetail() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
   const [loading, setLoading] = useState(true)
+  const [editingInteractionId, setEditingInteractionId] = useState(null)
+  const [editContent, setEditContent] = useState('')
+  const [editType, setEditType] = useState('')
+  const [expandedIds, setExpandedIds] = useState(() => new Set())
 
   useEffect(() => {
     loadContact()
@@ -60,6 +75,76 @@ export default function ContactDetail() {
     }
   }
 
+  function toggleExpand(id) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function startEditInteraction(i) {
+    setEditingInteractionId(i.id)
+    setEditContent(i.content || '')
+    // Journal entries aren't a selectable target type (only a real communication type
+    // makes sense to classify *into*) — '' means "leave as journal", so saving without
+    // touching the dropdown never silently reclassifies it as whatever option is first.
+    setEditType(i.type === 'journal' ? '' : i.type)
+  }
+
+  function cancelEditInteraction() {
+    setEditingInteractionId(null)
+    setEditContent('')
+    setEditType('')
+  }
+
+  async function toggleActionItem(interaction, itemIndex) {
+    const items = interaction.metadata.action_items.map((item, idx) =>
+      idx === itemIndex ? { ...item, done: !item.done } : item
+    )
+    const newMetadata = { ...interaction.metadata, action_items: items }
+    try {
+      const { error } = await supabase
+        .from('interactions')
+        .update({ metadata: newMetadata })
+        .eq('id', interaction.id)
+      if (error) throw error
+      setInteractions(prev => prev.map(x => (x.id === interaction.id ? { ...x, metadata: newMetadata } : x)))
+    } catch (err) {
+      alert('שגיאה בעדכון משימה: ' + err.message)
+    }
+  }
+
+  async function deleteInteraction(i) {
+    if (!confirm('למחוק את האינטראקציה לצמיתות?')) return
+    try {
+      const { error } = await supabase.from('interactions').delete().eq('id', i.id)
+      if (error) throw error
+      setInteractions(prev => prev.filter(x => x.id !== i.id))
+      if (editingInteractionId === i.id) cancelEditInteraction()
+    } catch (err) {
+      alert('שגיאה במחיקה: ' + err.message)
+    }
+  }
+
+  async function saveInteractionContent(i) {
+    try {
+      const updates = { content: editContent, ...(editType ? { type: editType } : {}) }
+      const { error } = await supabase
+        .from('interactions')
+        .update(updates)
+        .eq('id', i.id)
+      if (error) throw error
+      setInteractions(prev => prev.map(x => (x.id === i.id ? { ...x, ...updates } : x)))
+      setEditingInteractionId(null)
+      setEditContent('')
+      setEditType('')
+    } catch (err) {
+      alert('שגיאה בשמירה: ' + err.message)
+    }
+  }
+
   async function deleteContact() {
     if (!confirm('האם למחוק את איש הקשר לצמיתות?')) return
     const { error } = await supabase.from('contacts').delete().eq('id', id)
@@ -103,16 +188,10 @@ export default function ContactDetail() {
                 </button>
               </>
             ) : (
-              <>
-                <button onClick={() => setEditing(true)}
-                  className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                  ערוך
-                </button>
-                <button onClick={deleteContact}
-                  className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">
-                  מחק
-                </button>
-              </>
+              <button onClick={() => setEditing(true)}
+                className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                ערוך
+              </button>
             )}
           </div>
         </div>
@@ -152,25 +231,110 @@ export default function ContactDetail() {
 
       {/* Interaction history */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">היסטוריית אינטראקציות</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">היסטוריית אינטראקציות ויומן</h2>
         {interactions.length === 0 ? (
           <p className="text-gray-500 text-center py-4">אין אינטראקציות</p>
         ) : (
-          <div className="space-y-3">
-            {interactions.map(i => (
-              <div key={i.id} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50">
-                <span className="text-lg">{typeIcon(i.type)}</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">{typeLabel(i.type)}</span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(i.created_at).toLocaleString('he-IL')}
-                    </span>
+          <div className="space-y-2">
+            {interactions.map(i => {
+              const expanded = expandedIds.has(i.id)
+              const dateBased = i.type === 'journal' || i.type === 'meeting'
+              const title = dateBased ? dateWithDaysAgo(i.created_at) : typeLabel(i.type, i.metadata)
+              const timeLabel = dateBased
+                ? new Date(i.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+                : new Date(i.created_at).toLocaleString('he-IL')
+              const attendees = i.metadata?.attendees
+              const actionItems = i.metadata?.action_items || []
+              const pendingCount = actionItems.filter(item => !item.done).length
+              return (
+                <div key={i.id} className="rounded-lg bg-gray-50 overflow-hidden">
+                  <div className="flex items-center gap-2 p-3">
+                    <span className="text-lg shrink-0">{typeIcon(i.type)}</span>
+                    <span className="text-sm font-medium text-gray-700 shrink-0 whitespace-nowrap">{title}</span>
+                    {pendingCount > 0 && (
+                      <span className="shrink-0 text-amber-500" title={`${pendingCount} משימות פתוחות`}>❗</span>
+                    )}
+                    {i.content ? (
+                      <span className="flex-1 min-w-0 truncate text-sm text-gray-400">{i.content}</span>
+                    ) : (
+                      <span className="flex-1" />
+                    )}
+                    <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{timeLabel}</span>
+                    <button onClick={() => toggleExpand(i.id)}
+                      className="text-xs text-blue-600 hover:underline shrink-0 whitespace-nowrap">
+                      {expanded ? 'הצג פחות' : 'המשך קריאה'}
+                    </button>
                   </div>
-                  {i.content && <p className="text-sm text-gray-600 mt-1">{i.content}</p>}
+                  {expanded && (
+                    <div className="px-3 pb-3">
+                      {attendees?.length > 0 && (
+                        <p className="text-xs text-gray-400 mb-1">השתתפו גם: {attendees.join(', ')}</p>
+                      )}
+                      {actionItems.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs font-medium text-amber-700 mb-1">משימות המשך:</p>
+                          <ul className="space-y-1">
+                            {actionItems.map((item, idx) => (
+                              <li key={idx} className="flex items-center gap-2 text-sm">
+                                <input type="checkbox" checked={!!item.done}
+                                  onChange={() => toggleActionItem(i, idx)}
+                                  className="w-4 h-4" />
+                                <span className={item.done ? 'line-through text-gray-400' : 'text-gray-700'}>
+                                  {item.text}
+                                </span>
+                                {item.due_date && (
+                                  <span className="text-xs text-gray-400">
+                                    📅 {new Date(item.due_date).toLocaleDateString('he-IL')}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {editingInteractionId === i.id ? (
+                        <div className="space-y-2">
+                          <select value={editType} onChange={e => setEditType(e.target.value)}
+                            className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                            {editType === '' && <option value="">📝 רשומת יומן (ללא סיווג)</option>}
+                            {INTERACTION_TYPES.map(t => (
+                              <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
+                            ))}
+                          </select>
+                          <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                            rows={3}
+                            className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" />
+                          <div className="flex gap-2">
+                            <button onClick={() => saveInteractionContent(i)}
+                              className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                              שמור
+                            </button>
+                            <button onClick={cancelEditInteraction}
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
+                              ביטול
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm text-gray-600 whitespace-pre-wrap flex-1">{i.content}</p>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => startEditInteraction(i)}
+                              className="text-xs text-gray-400 hover:text-blue-600" title="ערוך תוכן">
+                              ✏️
+                            </button>
+                            <button onClick={() => deleteInteraction(i)}
+                              className="text-xs text-gray-400 hover:text-red-600" title="מחק אינטראקציה">
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -196,6 +360,18 @@ export default function ContactDetail() {
           </div>
         )}
       </div>
+
+      {/* Danger zone — kept at the bottom, away from the "ערוך" button, to avoid accidental deletion */}
+      <div className="bg-white rounded-xl shadow-sm border border-red-200 p-6 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-800">מחיקת איש קשר</p>
+          <p className="text-xs text-gray-500">פעולה זו תמחק את איש הקשר לצמיתות, כולל כל ההיסטוריה שלו</p>
+        </div>
+        <button onClick={deleteContact}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 shrink-0">
+          מחק איש קשר
+        </button>
+      </div>
     </div>
   )
 }
@@ -220,11 +396,20 @@ function InfoRow({ label, value, dir }) {
   )
 }
 
+const INTERACTION_TYPES = [
+  { value: 'phone_call', label: 'שיחת טלפון', icon: '📞' },
+  { value: 'message_sent', label: 'הודעה', icon: '😞' },
+  { value: 'correspondence', label: 'התכתבות', icon: '📜' },
+  { value: 'meeting', label: 'פגישה', icon: '🤝' },
+]
+
 function typeIcon(type) {
-  return { whatsapp_sent: '📤', whatsapp_received: '📥', meeting: '🤝', phone_call: '📞' }[type] || '📋'
+  if (type === 'journal') return '📝'
+  return INTERACTION_TYPES.find(t => t.value === type)?.icon || '📋'
 }
-function typeLabel(type) {
-  return { whatsapp_sent: 'הודעה נשלחה', whatsapp_received: 'הודעה התקבלה', meeting: 'פגישה', phone_call: 'שיחת טלפון' }[type] || type
+function typeLabel(type, metadata) {
+  if (type === 'journal') return metadata?.column_label || 'רשומת יומן'
+  return INTERACTION_TYPES.find(t => t.value === type)?.label || type
 }
 function statusColor(s) {
   return { scheduled: 'bg-blue-100 text-blue-700', completed: 'bg-green-100 text-green-700', cancelled: 'bg-gray-100 text-gray-600', no_show: 'bg-red-100 text-red-700' }[s] || ''

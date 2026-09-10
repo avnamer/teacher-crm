@@ -1,14 +1,9 @@
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
-
-const __dir = dirname(fileURLToPath(import.meta.url))
-const TOKENS_FILE = join(__dir, '../../.google-tokens.json')
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 export function getOAuth2Client() {
   return new google.auth.OAuth2(
@@ -18,17 +13,25 @@ export function getOAuth2Client() {
   )
 }
 
-export function saveTokens(tokens) {
-  writeFileSync(TOKENS_FILE, JSON.stringify(tokens))
+// Tokens are stored in Supabase (settings.google_calendar_tokens) rather than
+// on local disk — Render's free tier filesystem is ephemeral and wipes local
+// files on every restart/redeploy, which was silently breaking Calendar auth.
+export async function saveTokens(tokens) {
+  const { error } = await supabase
+    .from('settings')
+    .update({ google_calendar_tokens: tokens })
+    .eq('id', 'global')
+  if (error) throw new Error('שגיאה בשמירת טוקן Google: ' + error.message)
 }
 
-export function loadTokens() {
-  if (!existsSync(TOKENS_FILE)) return null
-  try {
-    return JSON.parse(readFileSync(TOKENS_FILE, 'utf8'))
-  } catch {
-    return null
-  }
+export async function loadTokens() {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('google_calendar_tokens')
+    .eq('id', 'global')
+    .single()
+  if (error) return null
+  return data?.google_calendar_tokens ?? null
 }
 
 // ─── Matching logic ────────────────────────────────────────────────────────
@@ -73,7 +76,7 @@ function findMatchingTeacher(event, teachers) {
 // ─── Main sync ─────────────────────────────────────────────────────────────
 
 export async function syncCalendarMeetings() {
-  const tokens = loadTokens()
+  const tokens = await loadTokens()
   if (!tokens) throw new Error('לא נמצאו טוקנים של Google — בצע אימות תחילה')
 
   const auth = getOAuth2Client()
@@ -82,12 +85,11 @@ export async function syncCalendarMeetings() {
   // Refresh token if needed
   if (tokens.expiry_date && Date.now() > tokens.expiry_date - 60000) {
     const { credentials } = await auth.refreshAccessToken()
-    saveTokens(credentials)
+    await saveTokens(credentials)
     auth.setCredentials(credentials)
   }
 
   const calendar = google.calendar({ version: 'v3', auth })
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
   // Load all contacts
   const { data: teachers, error: tErr } = await supabase.from('contacts').select('*').eq('role', 'מורה מוביל/ה').contains('custom_fields', { mentor_name: 'אבנר' })
@@ -171,4 +173,46 @@ export async function syncCalendarMeetings() {
   }
 
   return { added, skipped, unmatched }
+}
+
+// ─── Create a calendar event for a call-log action item ───────────────────
+
+export async function createCalendarEvent({ title, date, notes }) {
+  const tokens = await loadTokens()
+  if (!tokens) {
+    const err = new Error('לא נמצאו טוקנים של Google — בצע אימות תחילה')
+    err.code = 'NO_TOKENS'
+    throw err
+  }
+  if (!tokens.scope || !tokens.scope.includes('calendar.events')) {
+    const err = new Error('אין הרשאת כתיבה ליומן — יש להתחבר מחדש ל-Google')
+    err.code = 'MISSING_SCOPE'
+    throw err
+  }
+
+  const auth = getOAuth2Client()
+  auth.setCredentials(tokens)
+
+  if (tokens.expiry_date && Date.now() > tokens.expiry_date - 60000) {
+    const { credentials } = await auth.refreshAccessToken()
+    await saveTokens(credentials)
+    auth.setCredentials(credentials)
+  }
+
+  const calendar = google.calendar({ version: 'v3', auth })
+  const nextDay = new Date(date)
+  nextDay.setDate(nextDay.getDate() + 1)
+  const endDate = nextDay.toISOString().slice(0, 10)
+
+  const { data } = await calendar.events.insert({
+    calendarId: 'primary',
+    requestBody: {
+      summary: title,
+      description: notes || '',
+      start: { date },
+      end: { date: endDate },
+    },
+  })
+
+  return { eventId: data.id }
 }

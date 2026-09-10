@@ -2,12 +2,12 @@ import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 
 const links = [
-  { to: '/', label: 'דשבורד', icon: '📊' },
-  { to: '/contacts', label: 'אנשי קשר', icon: '👥' },
+  { to: '/contacts', label: 'דשבורד', icon: '👥' },
+  { to: '/mentors', label: 'מנטורים', icon: '🧑‍🏫' },
   { to: '/import', label: 'ייבוא CSV', icon: '📁' },
   { to: '/whatsapp', label: 'WhatsApp', icon: '💬' },
   { to: '/meetings', label: 'פגישות', icon: '📅' },
-  { to: '/monday', label: 'משימות Monday', icon: '📋' },
+  { to: '/voice-log', label: 'תיעוד שיחה', icon: '🎙' },
   { to: '/settings', label: 'הגדרות', icon: '⚙️' },
 ]
 

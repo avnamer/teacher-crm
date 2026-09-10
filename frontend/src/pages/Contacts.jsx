@@ -1,8 +1,35 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
+import { BulkSendModal } from './WhatsApp.jsx'
 
 const MENTOR = 'אבנר'
+
+const DEFAULT_WIDTH = 150
+const MIN_WIDTH = 60
+
+const DEFAULT_COLUMNS = [
+  { key: 'name', label: 'שם', source: 'core', visible: true, locked: true, width: 180 },
+  { key: 'phone', label: 'טלפון', source: 'core', visible: true, locked: false, width: 140 },
+  { key: 'school', label: 'בית ספר', source: 'core', visible: true, locked: false, width: 240 },
+  { key: 'gender', label: 'מגדר', source: 'core', visible: true, locked: false, width: 90 },
+  { key: 'hackathon_date', label: 'מועד אקתון', source: 'core', visible: true, locked: false, width: 130 },
+  { key: 'email', label: 'מייל', source: 'core', visible: false, locked: false, width: 200 },
+  { key: 'class_name', label: 'כיתה', source: 'core', visible: false, locked: false, width: 90 },
+  { key: 'birthday', label: 'יום הולדת', source: 'core', visible: false, locked: false, width: 130 },
+  { key: 'last_contact_journal', label: 'יומן קשר אחרון', source: 'journal', visible: true, locked: false, width: 220 },
+  // keys intentionally match the pre-existing custom_fields.challenge1/2/3 (from the old
+  // standalone Monday page) so existing data renders immediately with no migration.
+  { key: 'challenge1', label: 'אתגר 1', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
+  { key: 'challenge2', label: 'אתגר 2', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
+  { key: 'challenge3', label: 'אתגר 3', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
+]
+
+// The pseudo-contact row representing "מנהל המערכת" (created by the voice-log
+// admin_task route) — pinned to the top of the table and excluded from teacher stats.
+function isAdminRow(contact) {
+  return contact.custom_fields?.is_admin_row === true
+}
 
 // Show only Avner's teachers: mentor_name must match, and role must be a teacher role.
 function isMyTeacher(contact) {
@@ -12,18 +39,159 @@ function isMyTeacher(contact) {
   return role.includes('מורה')
 }
 
+function daysSince(dateStr) {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+}
+
+// Bucket a teacher by days since their last logged contact (any interaction type).
+function contactBucket(contact, lastContactMap) {
+  const lastAt = lastContactMap[contact.id]
+  if (!lastAt) return 'red'
+  const days = daysSince(lastAt)
+  if (days <= 7) return 'green'
+  if (days <= 14) return 'orange'
+  return 'red'
+}
+
+function getCellValue(contact, col) {
+  if (col.source === 'custom' || col.source === 'task') return contact.custom_fields?.[col.key] ?? ''
+  return contact[col.key] ?? ''
+}
+
+function getEditType(col) {
+  if (col.source === 'task') return 'task'
+  if (col.source === 'journal') return 'journal'
+  if (col.source === 'custom') return 'text'
+  if (col.key === 'gender') return 'gender'
+  if (col.key === 'hackathon_date' || col.key === 'birthday') return 'date'
+  if (col.key === 'email') return 'email'
+  return 'text'
+}
+
+// A task cell counts as "done" for any truthy, non-"לא הוגש" value — this keeps Monday's
+// existing 'הוגש' / 'לא הוגש' strings working as the done/not-done signal for Monday task
+// columns, while general task columns just store boolean true/false.
+function isTaskDone(contact, col) {
+  const value = contact.custom_fields?.[col.key]
+  return Boolean(value) && value !== 'לא הוגש'
+}
+
+// First sentence of a journal entry's free text, for the compact table view (full text is
+// still available via the cell's title tooltip).
+function firstSentence(text) {
+  if (!text) return '-'
+  const trimmed = text.trim()
+  const match = trimmed.match(/^[^.!?\n]+[.!?]?/)
+  return match ? match[0].trim() : trimmed
+}
+
+// Icon for a non-journal interaction type, used when it's more recent than any manual
+// journal entry — mirrors the icons in ContactDetail.jsx's typeIcon().
+function interactionTypeIcon(type) {
+  return { phone_call: '📞', message_sent: '😞', correspondence: '📜', meeting: '🤝' }[type] || '📋'
+}
+
+function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
+  if (col.source === 'task') return isTaskDone(contact, col) ? '✓' : ''
+  if (col.source === 'journal') {
+    const entry = journalMap?.[contact.id]?.[col.key]
+    // The "last contact" column should reflect the true latest interaction, not just the
+    // latest manual journal note for this column — a phone call or WhatsApp message logged
+    // after the last journal entry is more recent and should take priority.
+    const latestOther = col.key === 'last_contact_journal' ? lastNonJournalMap?.[contact.id] : null
+    const useLatestOther = latestOther && (!entry || new Date(latestOther.created_at) > new Date(entry.created_at))
+    const source = useLatestOther ? latestOther : entry
+    if (!source) return '-'
+    const days = daysSince(source.created_at)
+    const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+    const prefix = useLatestOther ? `${interactionTypeIcon(latestOther.type)} ` : ''
+    return `${prefix}(${daysStr}) ${firstSentence(source.content)}`
+  }
+  const value = getCellValue(contact, col)
+  if (col.source === 'core' && col.key === 'gender') {
+    return value === 'male' ? 'זכר' : value === 'female' ? 'נקבה' : '-'
+  }
+  if (col.source === 'core' && (col.key === 'hackathon_date' || col.key === 'birthday')) {
+    return value ? new Date(value).toLocaleDateString('he-IL') : '-'
+  }
+  return value || '-'
+}
+
 export default function Contacts() {
   const [contacts, setContacts] = useState([])
+  const [columns, setColumns] = useState(DEFAULT_COLUMNS)
+  const [columnsLoaded, setColumnsLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [genderFilter, setGenderFilter] = useState('all')
   const [showAll, setShowAll] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showAddMeetingModal, setShowAddMeetingModal] = useState(false)
   const [editContact, setEditContact] = useState(null)
+  const [showColumnManager, setShowColumnManager] = useState(false)
+  const [showMondayColumns, setShowMondayColumns] = useState(false)
+  const [taskComposerTeacher, setTaskComposerTeacher] = useState(null) // contact | null
+  const [bulkReminderCol, setBulkReminderCol] = useState(null) // column | null
+  const [templates, setTemplates] = useState([])
+  const [editingCell, setEditingCell] = useState(null) // { contactId, colKey } | null
+  const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
+  const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
+  const [lastContactMap, setLastContactMap] = useState({}) // { [contactId]: latest created_at across all interactions }
+  const [lastNonJournalMap, setLastNonJournalMap] = useState({}) // { [contactId]: latest {content, type, created_at} among non-journal interactions }
+  const [expandedBucket, setExpandedBucket] = useState(null) // 'green' | 'orange' | 'red' | null
+  const [pendingTasksMap, setPendingTasksMap] = useState({}) // { [contactId]: [{text, due_date}, ...] } — unresolved action items from phone-call logs
+  const [pendingTasksExpanded, setPendingTasksExpanded] = useState(false)
 
   useEffect(() => {
     loadContacts()
+    loadColumns()
   }, [])
+
+  useEffect(() => {
+    supabase.from('message_templates').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setTemplates(data || []))
+  }, [])
+
+  useEffect(() => {
+    if (!resizing) return
+
+    function onMove(e) {
+      const delta = e.clientX - resizing.startX
+      // RTL layout: the handle sits on the column's left border, so dragging
+      // left (negative delta) should widen the column, and right should shrink it.
+      const newWidth = Math.max(MIN_WIDTH, Math.round(resizing.startWidth - delta))
+      setColumns(cols => cols.map(c => (c.key === resizing.key ? { ...c, width: newWidth } : c)))
+    }
+
+    function onUp() {
+      setResizing(null)
+      setColumns(cols => {
+        saveColumnsSilently(cols)
+        return cols
+      })
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [resizing])
+
+  async function saveColumnsSilently(next) {
+    const { error } = await supabase
+      .from('settings')
+      .update({ contacts_columns: next })
+      .eq('id', 'global')
+    if (error) console.error('Error saving column widths:', error)
+  }
+
+  function startResize(key, e) {
+    e.preventDefault()
+    const col = columns.find(c => c.key === key)
+    setResizing({ key, startX: e.clientX, startWidth: col?.width || DEFAULT_WIDTH })
+  }
 
   async function loadContacts() {
     try {
@@ -33,10 +201,144 @@ export default function Contacts() {
         .order('name', { ascending: true })
       if (error) throw error
       setContacts(data || [])
+      const ids = (data || []).map(c => c.id)
+      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids)])
     } catch (err) {
       console.error('Error loading contacts:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Latest interaction of ANY type per contact — used for the "days since last contact" stats.
+  async function loadLastContactDates(contactIds) {
+    if (contactIds.length === 0) return
+    try {
+      const { data, error } = await supabase
+        .from('interactions')
+        .select('contact_id, created_at, type, content')
+        .in('contact_id', contactIds)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const map = {}
+      const nonJournalMap = {}
+      for (const row of data || []) {
+        if (!map[row.contact_id]) map[row.contact_id] = row.created_at
+        if (row.type !== 'journal' && !nonJournalMap[row.contact_id]) {
+          nonJournalMap[row.contact_id] = { content: row.content, type: row.type, created_at: row.created_at }
+        }
+      }
+      setLastContactMap(map)
+      setLastNonJournalMap(nonJournalMap)
+    } catch (err) {
+      console.error('Error loading last-contact dates:', err)
+    }
+  }
+
+  // Unresolved action items extracted from phone-call voice logs — surfaced as a follow-up indicator.
+  async function loadPendingTasks(contactIds) {
+    if (contactIds.length === 0) return
+    try {
+      const { data, error } = await supabase
+        .from('interactions')
+        .select('contact_id, metadata')
+        .eq('type', 'phone_call')
+        .in('contact_id', contactIds)
+      if (error) throw error
+      const map = {}
+      for (const row of data || []) {
+        const items = (row.metadata?.action_items || []).filter(item => !item.done)
+        if (items.length === 0) continue
+        map[row.contact_id] = [...(map[row.contact_id] || []), ...items]
+      }
+      setPendingTasksMap(map)
+    } catch (err) {
+      console.error('Error loading pending tasks:', err)
+    }
+  }
+
+  async function loadJournalEntries(contactIds) {
+    if (contactIds.length === 0) return
+    try {
+      const { data, error } = await supabase
+        .from('interactions')
+        .select('contact_id, content, metadata, created_at')
+        .eq('type', 'journal')
+        .in('contact_id', contactIds)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const map = {}
+      for (const row of data || []) {
+        const colKey = row.metadata?.column_key
+        if (!colKey) continue
+        map[row.contact_id] ??= {}
+        // Rows arrive newest-first, so the first one seen per (contact, column) is the latest.
+        if (!map[row.contact_id][colKey]) {
+          map[row.contact_id][colKey] = { content: row.content, created_at: row.created_at }
+        }
+      }
+      setJournalMap(map)
+    } catch (err) {
+      console.error('Error loading journal entries:', err)
+    }
+  }
+
+  async function addJournalEntry(contact, col, text) {
+    if (!text || !text.trim()) return
+    const { data, error } = await supabase
+      .from('interactions')
+      .insert({
+        contact_id: contact.id,
+        type: 'journal',
+        content: text.trim(),
+        metadata: { column_key: col.key, column_label: col.label },
+      })
+      .select()
+      .single()
+    if (error) {
+      alert('שגיאה בשמירת רשומת יומן: ' + error.message)
+      return
+    }
+    setJournalMap(prev => ({
+      ...prev,
+      [contact.id]: { ...(prev[contact.id] || {}), [col.key]: { content: data.content, created_at: data.created_at } },
+    }))
+    setLastContactMap(prev => (
+      !prev[contact.id] || new Date(data.created_at) > new Date(prev[contact.id])
+        ? { ...prev, [contact.id]: data.created_at }
+        : prev
+    ))
+  }
+
+  async function loadColumns() {
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('contacts_columns')
+        .eq('id', 'global')
+        .single()
+      if (error) throw error
+      if (data?.contacts_columns && data.contacts_columns.length > 0) {
+        const saved = data.contacts_columns
+        // Merge in any new built-in columns (e.g. added in a later version) that aren't in a saved config yet.
+        const missing = DEFAULT_COLUMNS.filter(dc => !saved.some(sc => sc.key === dc.key))
+        setColumns(missing.length > 0 ? [...saved, ...missing] : saved)
+      }
+    } catch (err) {
+      console.error('Error loading column settings:', err)
+    } finally {
+      setColumnsLoaded(true)
+    }
+  }
+
+  async function saveColumns(next) {
+    setColumns(next)
+    const { error } = await supabase
+      .from('settings')
+      .update({ contacts_columns: next })
+      .eq('id', 'global')
+    if (error) {
+      alert('שגיאה בשמירת הגדרות העמודות: ' + error.message + '\n\nיתכן שצריך להריץ מיגרציה ב-Supabase (ראה supabase-setup.sql).')
     }
   }
 
@@ -50,6 +352,31 @@ export default function Contacts() {
     }
   }
 
+  async function saveCell(contact, col, rawValue) {
+    const payload = { custom_fields: { ...(contact.custom_fields || {}), _manual_edit: true } }
+    if (col.source === 'custom' || col.source === 'task') {
+      // For a Monday task column this replaces the legacy 'הוגש'/'לא הוגש' string with a plain
+      // boolean — safe because _manual_edit above already opts this contact out of future
+      // Monday syncs, and isTaskDone() treats both encodings as equivalent for display.
+      payload.custom_fields[col.key] = rawValue
+    } else {
+      payload[col.key] = rawValue || null
+    }
+    const { data, error } = await supabase
+      .from('contacts')
+      .update(payload)
+      .eq('id', contact.id)
+      .select()
+      .single()
+    if (error) {
+      alert('שגיאה בשמירה: ' + error.message)
+      return
+    }
+    setContacts(contacts.map(c => (c.id === contact.id ? data : c)))
+  }
+
+  const visibleColumns = columns.filter(c => c.visible)
+
   const filtered = contacts.filter(c => {
     const matchSearch =
       c.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -59,23 +386,78 @@ export default function Contacts() {
     const matchGender = genderFilter === 'all' || c.gender === genderFilter
     const matchRole = showAll || isMyTeacher(c)
     return matchSearch && matchGender && matchRole
+  }).sort((a, b) => (isAdminRow(b) ? 1 : 0) - (isAdminRow(a) ? 1 : 0)) // pin admin row to the top
+
+  // Contact-recency stats — always over "my teachers", regardless of the search/gender/showAll filters above.
+  const myTeachers = contacts.filter(isMyTeacher)
+  const buckets = { green: [], orange: [], red: [] }
+  for (const t of myTeachers) buckets[contactBucket(t, lastContactMap)].push(t)
+
+  // Counts every task column regardless of its own visible/hidden state (same precedent as
+  // buckets above) — hiding a column declutters the table view, it doesn't mean the task no
+  // longer matters for the aggregate progress count.
+  const taskColumns = columns.filter(c => c.source === 'task')
+  const taskStats = ['monday', 'general'].map(taskSource => {
+    const cols = taskColumns.filter(c => c.taskSource === taskSource)
+    let done = 0
+    let total = 0
+    for (const teacher of myTeachers) {
+      for (const col of cols) {
+        total += 1
+        if (isTaskDone(teacher, col)) done += 1
+      }
+    }
+    return { taskSource, done, total }
   })
 
-  if (loading) {
+  if (loading || !columnsLoaded) {
     return <div className="flex items-center justify-center h-64 text-gray-500">טוען...</div>
   }
 
   return (
     <div className="space-y-4">
+      <ContactStats
+        buckets={buckets}
+        expandedBucket={expandedBucket}
+        onToggleBucket={key => setExpandedBucket(prev => (prev === key ? null : key))}
+      />
+
+      <PendingTasksBanner
+        pendingTasksMap={pendingTasksMap}
+        contacts={contacts}
+        expanded={pendingTasksExpanded}
+        onToggle={() => setPendingTasksExpanded(!pendingTasksExpanded)}
+      />
+
+      <TaskStats stats={taskStats} />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">אנשי קשר</h1>
+        <h1 className="text-2xl font-bold text-gray-800">דשבורד</h1>
         <div className="flex gap-2">
+          <button
+            onClick={() => setShowColumnManager(true)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 transition-colors border border-gray-300"
+          >
+            ⚙️ עמודות
+          </button>
+          <button
+            onClick={() => setShowMondayColumns(true)}
+            className="px-4 py-2 bg-orange-50 text-orange-700 rounded-lg text-sm hover:bg-orange-100 transition-colors border border-orange-200"
+          >
+            🔄 עמודות Monday
+          </button>
           <Link
             to="/import"
             className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
           >
             📁 ייבוא CSV
           </Link>
+          <button
+            onClick={() => setShowAddMeetingModal(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+          >
+            🤝 הוסף פגישה
+          </button>
           <button
             onClick={() => setShowAddModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
@@ -132,42 +514,84 @@ export default function Contacts() {
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+          <div className="overflow-auto max-h-[70vh]">
+            <table className="text-sm" style={{ tableLayout: 'fixed', width: visibleColumns.reduce((sum, c) => sum + (c.width || DEFAULT_WIDTH), 0) + 120 }}>
+              <thead className="border-b border-gray-200">
                 <tr>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">שם</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">טלפון</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 hidden md:table-cell">בית ספר</th>
-
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">מגדר</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">מועד אקתון</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">פעולות</th>
+                  {visibleColumns.map(col => (
+                    <th
+                      key={col.key}
+                      className="sticky top-0 z-10 bg-gray-50 relative text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis"
+                      style={{ width: col.width || DEFAULT_WIDTH }}
+                    >
+                      {col.label}
+                      {col.source === 'task' && (
+                        <button
+                          onClick={() => setBulkReminderCol(col)}
+                          className="mr-1 text-green-600 hover:text-green-800"
+                          title="שלח תזכורת לכל מי שלא סימן"
+                        >
+                          📲
+                        </button>
+                      )}
+                      <span
+                        onMouseDown={e => startResize(col.key, e)}
+                        className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500"
+                        title="גרור לשינוי רוחב"
+                      />
+                    </th>
+                  ))}
+                  <th className="sticky top-0 z-10 bg-gray-50 text-center px-4 py-3 font-medium text-gray-600" style={{ width: 120 }}>פעולות</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map(contact => (
                   <tr key={contact.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <Link to={`/contacts/${contact.id}`} className="text-blue-600 hover:underline font-medium">
-                        {contact.name}
-                      </Link>
-                      {contact.custom_fields?._manual_edit && (
-                        <span title="נערך ידנית — מוגן מסנכרון Monday" className="mr-1 text-xs text-gray-400">✏️</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600" dir="ltr">{contact.phone}</td>
-                    <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{contact.school || '-'}</td>
-
-                    <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">
-                      {contact.gender === 'male' ? 'זכר' : 'נקבה'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">
-                      {contact.hackathon_date
-                        ? new Date(contact.hackathon_date).toLocaleDateString('he-IL')
-                        : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-center">
+                    {visibleColumns.map(col => (
+                      <td key={col.key} className="px-4 py-3 text-gray-600 overflow-hidden text-ellipsis" style={{ width: col.width || DEFAULT_WIDTH }}>
+                        {col.key === 'name' ? (
+                          <>
+                            <Link to={`/contacts/${contact.id}`} className="text-blue-600 hover:underline font-medium">
+                              {contact.name}
+                            </Link>
+                            {pendingTasksMap[contact.id]?.length > 0 && (
+                              <span
+                                title={`${pendingTasksMap[contact.id].length} משימות פתוחות מתיעוד שיחה`}
+                                className="mr-1 text-amber-500"
+                              >
+                                ❗
+                              </span>
+                            )}
+                            {contact.custom_fields?._manual_edit && (
+                              <span title="נערך ידנית — מוגן מסנכרון Monday" className="mr-1 text-xs text-gray-400">✏️</span>
+                            )}
+                          </>
+                        ) : (
+                          <EditableCell
+                            contact={contact}
+                            col={col}
+                            journalMap={journalMap}
+                            lastNonJournalMap={lastNonJournalMap}
+                            isEditing={editingCell?.contactId === contact.id && editingCell?.colKey === col.key}
+                            onStartEdit={() => setEditingCell({ contactId: contact.id, colKey: col.key })}
+                            onCancel={() => setEditingCell(null)}
+                            onSave={async (val) => {
+                              if (col.source === 'journal') await addJournalEntry(contact, col, val)
+                              else await saveCell(contact, col, val)
+                              setEditingCell(null)
+                            }}
+                          />
+                        )}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => setTaskComposerTeacher(contact)}
+                        className="text-green-600 hover:text-green-800 text-xs ml-2"
+                        title="שלח תזכורת משימות ב-WhatsApp"
+                      >
+                        📲
+                      </button>
                       <button
                         onClick={() => setEditContact(contact)}
                         className="text-blue-500 hover:text-blue-700 text-xs ml-2"
@@ -189,6 +613,69 @@ export default function Contacts() {
         </div>
       )}
 
+      {/* Column Manager Modal */}
+      {showColumnManager && (
+        <ColumnManagerModal
+          columns={columns}
+          onClose={() => setShowColumnManager(false)}
+          onSave={saveColumns}
+        />
+      )}
+
+      {showMondayColumns && (
+        <MondayColumnsModal
+          columns={columns}
+          onClose={() => setShowMondayColumns(false)}
+          onSave={saveColumns}
+        />
+      )}
+
+      {taskComposerTeacher && (
+        <TaskComposerModal
+          teacher={taskComposerTeacher}
+          taskColumns={columns.filter(c => c.source === 'task')}
+          templates={templates}
+          onClose={() => setTaskComposerTeacher(null)}
+        />
+      )}
+
+      {bulkReminderCol && (() => {
+        const notDone = myTeachers.filter(t => !isTaskDone(t, bulkReminderCol)).map(t => t.id)
+        if (notDone.length === 0) {
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-8 text-center space-y-3 max-w-sm w-full">
+                <p className="text-lg font-medium">🎉 כולם סימנו את "{bulkReminderCol.label}"</p>
+                <button onClick={() => setBulkReminderCol(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+                  סגור
+                </button>
+              </div>
+            </div>
+          )
+        }
+        if (templates.length === 0) {
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-8 text-center space-y-3 max-w-sm w-full">
+                <p className="text-lg font-medium">אין תבניות הודעה</p>
+                <p className="text-sm text-gray-500">צור תבנית תחילה בדף WhatsApp</p>
+                <button onClick={() => setBulkReminderCol(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+                  סגור
+                </button>
+              </div>
+            </div>
+          )
+        }
+        return (
+          <BulkSendModal
+            templates={templates}
+            backendStatus="disconnected"
+            initialContactIds={notDone}
+            onClose={() => setBulkReminderCol(null)}
+          />
+        )
+      })()}
+
       {/* Add Contact Modal */}
       {showAddModal && (
         <AddContactModal
@@ -205,6 +692,609 @@ export default function Contacts() {
           onSaved={() => { setEditContact(null); loadContacts() }}
         />
       )}
+
+      {/* Add Meeting Modal */}
+      {showAddMeetingModal && (
+        <AddMeetingModal
+          teachers={myTeachers}
+          onClose={() => setShowAddMeetingModal(false)}
+          onSaved={() => { setShowAddMeetingModal(false); loadContacts() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Contact-recency stats ─────────────────────────────────────────
+const STAT_TILES = [
+  { key: 'green', label: 'יצרתי קשר ב-7 הימים האחרונים', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', dot: 'bg-green-500' },
+  { key: 'orange', label: 'לא דיברתי 8–14 ימים', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', dot: 'bg-orange-400' },
+  { key: 'red', label: 'לא דיברתי מעל שבועיים / אין קשר מתועד', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' },
+]
+
+function ContactStats({ buckets, expandedBucket, onToggleBucket }) {
+  const activeTile = STAT_TILES.find(t => t.key === expandedBucket)
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {STAT_TILES.map(tile => (
+          <button
+            key={tile.key}
+            type="button"
+            onClick={() => onToggleBucket(tile.key)}
+            className={`w-full text-right rounded-xl border p-4 transition-shadow hover:shadow-md ${tile.bg} ${tile.border} ${expandedBucket === tile.key ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`w-2.5 h-2.5 rounded-full ${tile.dot}`} />
+              <span className={`text-sm font-medium ${tile.text}`}>{tile.label}</span>
+            </div>
+            <div className={`text-3xl font-black ${tile.text}`}>{buckets[tile.key].length}</div>
+          </button>
+        ))}
+      </div>
+
+      {activeTile && (
+        <div className={`rounded-xl border p-3 ${activeTile.bg} ${activeTile.border}`}>
+          {buckets[activeTile.key].length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-2">—</p>
+          ) : (
+            <ul className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1">
+              {buckets[activeTile.key].map(c => (
+                <li key={c.id}>
+                  <Link to={`/contacts/${c.id}`} className={`text-sm hover:underline ${activeTile.text}`}>
+                    {c.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Per-source task counters ─────────────────────────────────────
+const TASK_STAT_LABELS = { monday: 'משימות Monday', general: 'משימות כלליות' }
+// Matches the color convention already used elsewhere in this file: orange for Monday-sourced
+// task columns (the "(משימת Monday)" tag, the "🔄 עמודות Monday" button), purple for general ones.
+const TASK_STAT_BAR_COLOR = { monday: 'bg-orange-500', general: 'bg-purple-500' }
+
+function TaskStats({ stats }) {
+  const visible = stats.filter(s => s.total > 0)
+  if (visible.length === 0) return null
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {visible.map(s => {
+        const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
+        return (
+          <div key={s.taskSource} className="rounded-xl border border-gray-200 bg-white p-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-700">{TASK_STAT_LABELS[s.taskSource]}</span>
+              <span className="text-sm text-gray-500">{s.done} / {s.total}</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-2 rounded-full transition-all ${TASK_STAT_BAR_COLOR[s.taskSource]}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Pending follow-up tasks banner (from voice-logged phone calls) ──
+function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
+  const entries = Object.entries(pendingTasksMap).filter(([, items]) => items.length > 0)
+  if (entries.length === 0) return null
+
+  return (
+    <div className="rounded-xl border p-4 bg-amber-50 border-amber-200">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">❗</span>
+          <span className="text-sm font-medium text-amber-800">
+            {entries.length} מורים עם משימות פתוחות מתיעוד שיחות טלפון
+          </span>
+        </div>
+        <button
+          onClick={onToggle}
+          className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          {expanded ? '▲ הסתר פירוט' : '▼ הצג פירוט'}
+        </button>
+      </div>
+
+      {expanded && (
+        <ul className="mt-3 space-y-2">
+          {entries.map(([contactId, items]) => {
+            const contact = contacts.find(c => c.id === contactId)
+            if (!contact) return null
+            return (
+              <li key={contactId} className="text-sm">
+                <Link to={`/contacts/${contactId}`} className="font-medium text-amber-800 hover:underline">
+                  {contact.name}
+                </Link>
+                <ul className="mr-4 list-disc text-amber-700">
+                  {items.map((item, i) => (
+                    <li key={i}>
+                      {item.text}
+                      {item.due_date && ` (עד ${new Date(item.due_date).toLocaleDateString('he-IL')})`}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ─── Editable table cell ──────────────────────────────────────────
+function EditableCell({ contact, col, journalMap, lastNonJournalMap, isEditing, onStartEdit, onCancel, onSave }) {
+  const editType = getEditType(col)
+  const [savingTask, setSavingTask] = useState(false)
+  // Journal cells always start blank — writing in them adds a new dated entry, it never edits the last one.
+  const rawValue = editType === 'journal' ? '' : getCellValue(contact, col)
+  const [value, setValue] = useState(rawValue)
+
+  // All hooks above must run unconditionally on every render (Rules of Hooks) — the task
+  // branch below returns early and never uses `value`/`setValue`, but they still need to be
+  // declared before any conditional return, same reasoning as `savingTask` above.
+  useEffect(() => { setValue(rawValue) }, [isEditing])
+
+  if (editType === 'task') {
+    const done = isTaskDone(contact, col)
+    async function handleTaskClick() {
+      if (savingTask) return
+      setSavingTask(true)
+      try {
+        await onSave(!done)
+      } finally {
+        setSavingTask(false)
+      }
+    }
+    return (
+      <button
+        onClick={handleTaskClick}
+        disabled={savingTask}
+        className="w-full flex items-center justify-center py-0.5 disabled:opacity-50"
+        title={done ? 'לחץ לביטול סימון' : 'לחץ לסימון כבוצע'}
+      >
+        <span
+          className={`w-5 h-5 rounded border flex items-center justify-center text-xs ${
+            done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 text-transparent'
+          }`}
+        >
+          ✓
+        </span>
+      </button>
+    )
+  }
+
+  if (!isEditing) {
+    const display = formatDisplay(contact, col, journalMap, lastNonJournalMap)
+    return (
+      <button
+        onClick={onStartEdit}
+        className="w-full text-right hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors truncate block"
+        title={editType === 'journal' ? (journalMap?.[contact.id]?.[col.key]?.content || 'לחץ להוספת רשומה חדשה') : 'לחץ לעריכה'}
+      >
+        {display}
+      </button>
+    )
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !(editType === 'journal' && e.shiftKey)) {
+      e.preventDefault()
+      onSave(value)
+    }
+    if (e.key === 'Escape') onCancel()
+  }
+
+  if (editType === 'journal') {
+    return (
+      <textarea
+        autoFocus
+        rows={2}
+        value={value}
+        placeholder="מה היה? (Enter לשמירה, Shift+Enter לשורה חדשה)"
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => onSave(value)}
+        onKeyDown={handleKeyDown}
+        className="w-full px-2 py-1 border border-blue-400 rounded outline-none text-sm resize-none"
+      />
+    )
+  }
+
+  if (editType === 'gender') {
+    return (
+      <select
+        autoFocus
+        value={value || 'male'}
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => onSave(value)}
+        onKeyDown={handleKeyDown}
+        className="w-full px-2 py-1 border border-blue-400 rounded outline-none text-sm"
+      >
+        <option value="male">זכר</option>
+        <option value="female">נקבה</option>
+      </select>
+    )
+  }
+
+  if (editType === 'date') {
+    return (
+      <input
+        autoFocus
+        type="date"
+        value={value ? value.split('T')[0] : ''}
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => onSave(value)}
+        onKeyDown={handleKeyDown}
+        className="w-full px-2 py-1 border border-blue-400 rounded outline-none text-sm"
+      />
+    )
+  }
+
+  return (
+    <input
+      autoFocus
+      type={editType === 'email' ? 'email' : 'text'}
+      value={value || ''}
+      dir={editType === 'email' ? 'ltr' : 'auto'}
+      onChange={e => setValue(e.target.value)}
+      onBlur={() => onSave(value)}
+      onKeyDown={handleKeyDown}
+      className="w-full px-2 py-1 border border-blue-400 rounded outline-none text-sm"
+    />
+  )
+}
+
+// ─── Per-teacher WhatsApp task composer ───────────────────────────
+const TASK_SOURCE_LABEL = { monday: 'Monday', general: 'כללי' }
+
+function TaskComposerModal({ teacher, taskColumns, templates, onClose }) {
+  const openTasks = taskColumns.filter(col => !isTaskDone(teacher, col))
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set(openTasks.map(c => c.key)))
+  const [sending, setSending] = useState(false)
+
+  function toggle(key) {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const selectedLabels = taskColumns
+    .filter(col => selectedKeys.has(col.key))
+    .map(col => `${col.label} (${TASK_SOURCE_LABEL[col.taskSource]})`)
+
+  const openTasksText = selectedLabels.length > 0
+    ? selectedLabels.map(l => `- ${l}`).join('\n')
+    : ''
+
+  if (sending) {
+    const presetContact = { ...teacher, _open_tasks_text: openTasksText }
+    return (
+      <BulkSendModal
+        templates={templates}
+        backendStatus="disconnected"
+        initialContactIds={[presetContact.id]}
+        presetContactOverride={presetContact}
+        onClose={onClose}
+      />
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-1">משימות פתוחות — {teacher.name}</h2>
+        <p className="text-xs text-gray-500 mb-4">בחר אילו משימות לכלול בהודעת התזכורת</p>
+
+        {openTasks.length === 0 ? (
+          <p className="text-sm text-gray-500 py-4">אין משימות פתוחות למורה זה 🎉</p>
+        ) : (
+          <div className="space-y-1 mb-6">
+            {openTasks.map(col => (
+              <label key={col.key} className="flex items-center gap-2 py-1.5 border-b border-gray-100 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedKeys.has(col.key)}
+                  onChange={() => toggle(col.key)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">{col.label}</span>
+                <span className="text-xs text-gray-400">({TASK_SOURCE_LABEL[col.taskSource]})</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => setSending(true)}
+            disabled={selectedLabels.length === 0 || templates.length === 0}
+            className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            title={templates.length === 0 ? 'צור תבנית הודעה תחילה בדף WhatsApp' : ''}
+          >
+            המשך לשליחה
+          </button>
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+            ביטול
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Column Manager ───────────────────────────────────────────────
+function ColumnManagerModal({ columns, onClose, onSave }) {
+  const [local, setLocal] = useState(columns)
+  const [newLabel, setNewLabel] = useState('')
+  const [newColType, setNewColType] = useState('custom') // 'custom' | 'journal' | 'task'
+  const [saving, setSaving] = useState(false)
+
+  function toggleVisible(key) {
+    setLocal(local.map(c => (c.key === key ? { ...c, visible: !c.visible } : c)))
+  }
+
+  function moveColumn(index, direction) {
+    const target = index + direction
+    if (target < 0 || target >= local.length) return
+    const next = [...local]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setLocal(next)
+  }
+
+  function removeColumn(key) {
+    if (!confirm('להסיר את העמודה? הנתונים הקיימים בעמודה לא יימחקו, רק יוסתרו.')) return
+    setLocal(local.filter(c => c.key !== key))
+  }
+
+  function addColumn() {
+    const label = newLabel.trim()
+    if (!label) return
+    // Check both label and key: this column's key equals its label, but a Monday column
+    // (created via the separate Monday-columns panel) gets a slugified key that could
+    // coincidentally match a label typed here — guard against silently sharing storage.
+    if (local.some(c => c.label === label || c.key === label)) {
+      alert('כבר קיימת עמודה בשם הזה')
+      return
+    }
+    const base = { key: label, label, visible: true, locked: false }
+    const col = newColType === 'task'
+      ? { ...base, source: 'task', taskSource: 'general' }
+      : { ...base, source: newColType }
+    setLocal([...local, col])
+    setNewLabel('')
+    setNewColType('custom')
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    await onSave(local)
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4">ניהול עמודות</h2>
+
+        <p className="text-xs text-gray-400 mb-2">השתמש בחצים כדי לשנות את סדר העמודות בטבלה</p>
+        <div className="space-y-1 mb-6">
+          {local.map((col, i) => (
+            <div key={col.key} className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100">
+              <div className="flex flex-col -my-1">
+                <button
+                  onClick={() => moveColumn(i, -1)}
+                  disabled={i === 0}
+                  className="text-gray-400 hover:text-gray-700 disabled:opacity-20 disabled:hover:text-gray-400 leading-none text-xs px-1"
+                  title="הזז למעלה"
+                >
+                  ▲
+                </button>
+                <button
+                  onClick={() => moveColumn(i, 1)}
+                  disabled={i === local.length - 1}
+                  className="text-gray-400 hover:text-gray-700 disabled:opacity-20 disabled:hover:text-gray-400 leading-none text-xs px-1"
+                  title="הזז למטה"
+                >
+                  ▼
+                </button>
+              </div>
+              <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={col.visible}
+                  disabled={col.locked}
+                  onChange={() => toggleVisible(col.key)}
+                  className="w-4 h-4"
+                />
+                <span className={col.locked ? 'text-gray-400' : ''}>{col.label}</span>
+                {col.source === 'custom' && (
+                  <span className="text-xs text-gray-400">(מותאם אישית)</span>
+                )}
+                {col.source === 'journal' && (
+                  <span className="text-xs text-blue-400">(יומן/אירועים)</span>
+                )}
+                {col.source === 'task' && col.taskSource === 'general' && (
+                  <span className="text-xs text-purple-400">(משימה)</span>
+                )}
+                {col.source === 'task' && col.taskSource === 'monday' && (
+                  <span className="text-xs text-orange-400">(משימת Monday)</span>
+                )}
+              </label>
+              {(col.source === 'custom' || col.source === 'journal' || col.source === 'task') && (
+                <button
+                  onClick={() => removeColumn(col.key)}
+                  className="text-red-400 hover:text-red-600 text-xs"
+                >
+                  הסר
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mb-6 space-y-2">
+          <div className="flex gap-2">
+            <input
+              placeholder="שם עמודה חדשה"
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addColumn()}
+              className="flex-1 px-3 py-2 border rounded-lg outline-none text-sm"
+            />
+            <button
+              onClick={addColumn}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+            >
+              + הוסף
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <input type="radio" name="newColType" checked={newColType === 'custom'}
+                onChange={() => setNewColType('custom')} className="w-3.5 h-3.5" />
+              טקסט רגיל
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+              <input type="radio" name="newColType" checked={newColType === 'journal'}
+                onChange={() => setNewColType('journal')} className="w-3.5 h-3.5" />
+              עמודת יומן / אירועים — כל כתיבה נשמרת כרשומה חדשה עם תאריך ושעה, במקום להחליף את הקודמת
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+              <input type="radio" name="newColType" checked={newColType === 'task'}
+                onChange={() => setNewColType('task')} className="w-3.5 h-3.5" />
+              עמודת משימה — תיבת סימון (✓) לכל מורה
+            </label>
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'שומר...' : 'שמור'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+            ביטול
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MondayColumnsModal({ columns, onClose, onSave }) {
+  const [local, setLocal] = useState(columns)
+  const [newLabel, setNewLabel] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const mondayCols = local.filter(c => c.source === 'task' && c.taskSource === 'monday')
+
+  function slugify(label) {
+    return label.trim().toLowerCase().replace(/\s+/g, '_')
+  }
+
+  function addColumn() {
+    const label = newLabel.trim()
+    if (!label) return
+    const key = slugify(label)
+    if (local.some(c => c.key === key)) {
+      alert('כבר קיימת עמודה עם המזהה הזה (ייתכן שזו עמודה כללית עם שם דומה)')
+      return
+    }
+    setLocal([...local, { key, label, source: 'task', taskSource: 'monday', visible: true, locked: false }])
+    setNewLabel('')
+  }
+
+  function renameColumn(key, label) {
+    setLocal(local.map(c => (c.key === key ? { ...c, label } : c)))
+  }
+
+  function removeColumn(key) {
+    if (!confirm('להסיר את עמודת ה-Monday? הנתונים הקיימים לא יימחקו, רק יוסתרו.')) return
+    setLocal(local.filter(c => c.key !== key))
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    await onSave(local)
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-2">עמודות Monday</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          אין חיבור חי ל-API של Monday (אין הרשאת ניהול לבורד). כאן אפשר לנהל אילו עמודות Monday
+          קיימות ומוצגות בטבלה. העדכון בפועל של הנתונים נעשה כשמבקשים מקלוד קוד להריץ סנכרון
+          (סקיל monday-integration) — הוא כותב ישירות לתוך Supabase לפי המפתחות (keys) שמוגדרים
+          כאן.
+        </p>
+
+        <div className="space-y-1 mb-6">
+          {mondayCols.length === 0 && (
+            <p className="text-xs text-gray-400 py-2">אין עמודות Monday מוגדרות</p>
+          )}
+          {mondayCols.map(col => (
+            <div key={col.key} className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100">
+              <input
+                value={col.label}
+                onChange={e => renameColumn(col.key, e.target.value)}
+                className="flex-1 px-2 py-1 border rounded text-sm outline-none"
+              />
+              <code className="text-xs text-gray-400" dir="ltr">{col.key}</code>
+              <button onClick={() => removeColumn(col.key)} className="text-red-400 hover:text-red-600 text-xs">
+                הסר
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="mb-6 flex gap-2">
+          <input
+            placeholder="שם עמודת Monday חדשה"
+            value={newLabel}
+            onChange={e => setNewLabel(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addColumn()}
+            className="flex-1 px-3 py-2 border rounded-lg outline-none text-sm"
+          />
+          <button onClick={addColumn} className="px-3 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700">
+            + הוסף
+          </button>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'שומר...' : 'שמור'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+            ביטול
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -285,6 +1375,127 @@ function EditContactModal({ contact, onClose, onSaved }) {
               onChange={e => setForm({...form, birthday: e.target.value})}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
           </div>
+          <div className="flex gap-2 pt-2">
+            <button type="submit" disabled={saving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'שומר...' : 'שמור'}
+            </button>
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+              ביטול
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function AddMeetingModal({ teachers, onClose, onSaved }) {
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [content, setContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  function toggleTeacher(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(selectedIds.size === teachers.length ? new Set() : new Set(teachers.map(t => t.id)))
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (selectedIds.size === 0) {
+      alert('יש לבחור לפחות מורה אחד')
+      return
+    }
+    if (!content.trim()) {
+      alert('יש למלא את תוכן הפגישה')
+      return
+    }
+    setSaving(true)
+    try {
+      const selected = teachers.filter(t => selectedIds.has(t.id))
+      const createdAt = new Date(`${date}T12:00:00`).toISOString()
+      const rows = selected.map(t => ({
+        contact_id: t.id,
+        type: 'meeting',
+        content: content.trim(),
+        created_at: createdAt,
+        metadata: { attendees: selected.filter(o => o.id !== t.id).map(o => o.name) },
+      }))
+      const { error } = await supabase.from('interactions').insert(rows)
+      if (error) throw error
+      onSaved()
+    } catch (err) {
+      alert('שגיאה בשמירת הפגישה: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4">הוסף פגישה</h2>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="text-sm text-gray-500 mb-1 block">תאריך הפגישה</label>
+            <input
+              type="date"
+              required
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm text-gray-500">מורים שהשתתפו *</label>
+              <button type="button" onClick={toggleSelectAll} className="text-xs text-blue-600 hover:underline">
+                {selectedIds.size === teachers.length ? 'נקה הכל' : 'בחר הכל'}
+              </button>
+            </div>
+            <div className="border rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
+              {teachers.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-3">אין מורים</p>
+              ) : (
+                teachers.map(t => (
+                  <label key={t.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(t.id)}
+                      onChange={() => toggleTeacher(t.id)}
+                      className="w-4 h-4"
+                    />
+                    {t.name}
+                  </label>
+                ))
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">{selectedIds.size} נבחרו</p>
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-500 mb-1 block">תוכן הפגישה *</label>
+            <textarea
+              required
+              rows={4}
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              placeholder="על מה דיברתם בפגישה?"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+            />
+          </div>
+
           <div className="flex gap-2 pt-2">
             <button type="submit" disabled={saving}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">

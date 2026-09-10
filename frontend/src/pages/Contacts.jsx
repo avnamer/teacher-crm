@@ -666,13 +666,24 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
 // ─── Editable table cell ──────────────────────────────────────────
 function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCancel, onSave }) {
   const editType = getEditType(col)
+  const [savingTask, setSavingTask] = useState(false)
 
   if (editType === 'task') {
     const done = isTaskDone(contact, col)
+    async function handleTaskClick() {
+      if (savingTask) return
+      setSavingTask(true)
+      try {
+        await onSave(!done)
+      } finally {
+        setSavingTask(false)
+      }
+    }
     return (
       <button
-        onClick={() => onSave(!done)}
-        className="w-full flex items-center justify-center py-0.5"
+        onClick={handleTaskClick}
+        disabled={savingTask}
+        className="w-full flex items-center justify-center py-0.5 disabled:opacity-50"
         title={done ? 'לחץ לביטול סימון' : 'לחץ לסימון כבוצע'}
       >
         <span

@@ -49,8 +49,8 @@ async function ensureAdminContact() {
   return created.id
 }
 
-// Adds a new free-text column to the shared contacts table config — the exact
-// same mechanism as the "+ הוסף" button in the Contacts column manager,
+// Adds a new task (checkbox) column to the shared contacts table config — the
+// exact same mechanism as picking "עמודת משימה" in the Contacts column manager,
 // just driven by an AI-authored label instead of manual typing.
 async function addCustomColumnFromVoice(rawLabel) {
   const baseLabel = (rawLabel || 'משימה חדשה').trim() || 'משימה חדשה'
@@ -64,12 +64,12 @@ async function addCustomColumnFromVoice(rawLabel) {
 
   let label = baseLabel
   let n = 2
-  while (current.some(c => c.label === label)) {
+  while (current.some(c => c.label === label || c.key === label)) {
     label = `${baseLabel} (${n})`
     n++
   }
 
-  const newColumn = { key: label, label, source: 'custom', visible: true, locked: false }
+  const newColumn = { key: label, label, source: 'task', taskSource: 'general', visible: true, locked: false }
   const { error: saveErr } = await supabase
     .from('settings')
     .update({ contacts_columns: [...current, newColumn] })
@@ -429,7 +429,7 @@ export default function VoiceLog() {
 
           {selectedRoute === 'new_task_column' && (
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">כותרת העמודה (תתווסף לכל המורים בטבלת אנשי הקשר)</label>
+              <label className="block text-sm font-medium text-gray-600 mb-1">כותרת עמודת המשימה (תיבת סימון שתתווסף לכל המורים בטבלת אנשי הקשר)</label>
               <input
                 type="text"
                 value={columnLabel}

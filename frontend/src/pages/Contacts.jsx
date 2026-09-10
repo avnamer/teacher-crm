@@ -17,6 +17,8 @@ const DEFAULT_COLUMNS = [
   { key: 'class_name', label: 'כיתה', source: 'core', visible: false, locked: false, width: 90 },
   { key: 'birthday', label: 'יום הולדת', source: 'core', visible: false, locked: false, width: 130 },
   { key: 'last_contact_journal', label: 'יומן קשר אחרון', source: 'journal', visible: true, locked: false, width: 220 },
+  // keys intentionally match the pre-existing custom_fields.challenge1/2/3 (from the old
+  // standalone Monday page) so existing data renders immediately with no migration.
   { key: 'challenge1', label: 'אתגר 1', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
   { key: 'challenge2', label: 'אתגר 2', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
   { key: 'challenge3', label: 'אתגר 3', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
@@ -316,6 +318,9 @@ export default function Contacts() {
   async function saveCell(contact, col, rawValue) {
     const payload = { custom_fields: { ...(contact.custom_fields || {}), _manual_edit: true } }
     if (col.source === 'custom' || col.source === 'task') {
+      // For a Monday task column this replaces the legacy 'הוגש'/'לא הוגש' string with a plain
+      // boolean — safe because _manual_edit above already opts this contact out of future
+      // Monday syncs, and isTaskDone() treats both encodings as equivalent for display.
       payload.custom_fields[col.key] = rawValue
     } else {
       payload[col.key] = rawValue || null

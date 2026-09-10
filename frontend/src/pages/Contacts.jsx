@@ -48,11 +48,12 @@ function contactBucket(contact, lastContactMap) {
 }
 
 function getCellValue(contact, col) {
-  if (col.source === 'custom') return contact.custom_fields?.[col.key] ?? ''
+  if (col.source === 'custom' || col.source === 'task') return contact.custom_fields?.[col.key] ?? ''
   return contact[col.key] ?? ''
 }
 
 function getEditType(col) {
+  if (col.source === 'task') return 'task'
   if (col.source === 'journal') return 'journal'
   if (col.source === 'custom') return 'text'
   if (col.key === 'gender') return 'gender'
@@ -61,7 +62,16 @@ function getEditType(col) {
   return 'text'
 }
 
+// A task cell counts as "done" for any truthy, non-"לא הוגש" value — this keeps Monday's
+// existing 'הוגש' / 'לא הוגש' strings working as the done/not-done signal for Monday task
+// columns, while general task columns just store boolean true/false.
+function isTaskDone(contact, col) {
+  const value = contact.custom_fields?.[col.key]
+  return Boolean(value) && value !== 'לא הוגש'
+}
+
 function formatDisplay(contact, col, journalMap) {
+  if (col.source === 'task') return isTaskDone(contact, col) ? '✓' : ''
   if (col.source === 'journal') {
     const entry = journalMap?.[contact.id]?.[col.key]
     if (!entry) return '-'

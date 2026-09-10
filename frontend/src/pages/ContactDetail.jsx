@@ -180,16 +180,10 @@ export default function ContactDetail() {
                 </button>
               </>
             ) : (
-              <>
-                <button onClick={() => setEditing(true)}
-                  className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                  ערוך
-                </button>
-                <button onClick={deleteContact}
-                  className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">
-                  מחק
-                </button>
-              </>
+              <button onClick={() => setEditing(true)}
+                className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                ערוך
+              </button>
             )}
           </div>
         </div>
@@ -350,6 +344,18 @@ export default function ContactDetail() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Danger zone — kept at the bottom, away from the "ערוך" button, to avoid accidental deletion */}
+      <div className="bg-white rounded-xl shadow-sm border border-red-200 p-6 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-800">מחיקת איש קשר</p>
+          <p className="text-xs text-gray-500">פעולה זו תמחק את איש הקשר לצמיתות, כולל כל ההיסטוריה שלו</p>
+        </div>
+        <button onClick={deleteContact}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 shrink-0">
+          מחק איש קשר
+        </button>
       </div>
     </div>
   )

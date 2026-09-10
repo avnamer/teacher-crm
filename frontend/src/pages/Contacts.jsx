@@ -113,6 +113,7 @@ export default function Contacts() {
   const [showColumnManager, setShowColumnManager] = useState(false)
   const [showMondayColumns, setShowMondayColumns] = useState(false)
   const [taskComposerTeacher, setTaskComposerTeacher] = useState(null) // contact | null
+  const [bulkReminderCol, setBulkReminderCol] = useState(null) // column | null
   const [templates, setTemplates] = useState([])
   const [editingCell, setEditingCell] = useState(null) // { contactId, colKey } | null
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
@@ -500,6 +501,15 @@ export default function Contacts() {
                       style={{ width: col.width || DEFAULT_WIDTH }}
                     >
                       {col.label}
+                      {col.source === 'task' && (
+                        <button
+                          onClick={() => setBulkReminderCol(col)}
+                          className="mr-1 text-green-600 hover:text-green-800"
+                          title="שלח תזכורת לכל מי שלא סימן"
+                        >
+                          📲
+                        </button>
+                      )}
                       <span
                         onMouseDown={e => startResize(col.key, e)}
                         className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 active:bg-blue-500"
@@ -603,6 +613,43 @@ export default function Contacts() {
           onClose={() => setTaskComposerTeacher(null)}
         />
       )}
+
+      {bulkReminderCol && (() => {
+        const notDone = myTeachers.filter(t => !isTaskDone(t, bulkReminderCol)).map(t => t.id)
+        if (notDone.length === 0) {
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-8 text-center space-y-3 max-w-sm w-full">
+                <p className="text-lg font-medium">🎉 כולם סימנו את "{bulkReminderCol.label}"</p>
+                <button onClick={() => setBulkReminderCol(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+                  סגור
+                </button>
+              </div>
+            </div>
+          )
+        }
+        if (templates.length === 0) {
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-8 text-center space-y-3 max-w-sm w-full">
+                <p className="text-lg font-medium">אין תבניות הודעה</p>
+                <p className="text-sm text-gray-500">צור תבנית תחילה בדף WhatsApp</p>
+                <button onClick={() => setBulkReminderCol(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+                  סגור
+                </button>
+              </div>
+            </div>
+          )
+        }
+        return (
+          <BulkSendModal
+            templates={templates}
+            backendStatus="disconnected"
+            initialContactIds={notDone}
+            onClose={() => setBulkReminderCol(null)}
+          />
+        )
+      })()}
 
       {/* Add Contact Modal */}
       {showAddModal && (
@@ -911,8 +958,6 @@ function TaskComposerModal({ teacher, taskColumns, templates, onClose }) {
 
   if (sending) {
     const presetContact = { ...teacher, _open_tasks_text: openTasksText }
-    // presetContactOverride is not yet read by BulkSendModal (that wiring lands in a follow-up
-    // change) — passing it here is a harmless no-op until then, not a bug.
     return (
       <BulkSendModal
         templates={templates}

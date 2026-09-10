@@ -21,7 +21,7 @@ CREATE TABLE contacts (
 CREATE TABLE interactions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE NOT NULL,
-  type TEXT CHECK (type IN ('whatsapp_sent', 'whatsapp_received', 'meeting', 'phone_call', 'journal')) NOT NULL,
+  type TEXT CHECK (type IN ('message_sent', 'correspondence', 'meeting', 'phone_call', 'journal')) NOT NULL,
   content TEXT,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT now()
@@ -189,3 +189,11 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS contacts_columns JSONB DEFAULT '[]
 ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
 ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
   CHECK (type IN ('whatsapp_sent', 'whatsapp_received', 'meeting', 'phone_call', 'journal'));
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: אייקוני סוג אינטראקציה - הודעה חד-צדדית / התכתבות (הרץ פעם אחת אם הטבלה כבר קיימת)
+-- מחליף whatsapp_sent/whatsapp_received (שמעולם לא נוצרו בפועל) ב-message_sent/correspondence
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
+ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
+  CHECK (type IN ('message_sent', 'correspondence', 'meeting', 'phone_call', 'journal'));

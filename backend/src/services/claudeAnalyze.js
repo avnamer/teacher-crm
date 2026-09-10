@@ -10,10 +10,17 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 
 אם אין די מידע כדי להחליט בבירור בין השלושה, החזר route "unclear".
 
+עבור route "teacher_call" בלבד, זהה גם את ערוץ התקשורת שתואר, בשדה "communication_type":
+- "phone_call" — שיחת טלפון (למשל "התקשרתי אליה", "דיברנו בטלפון")
+- "message_sent" — המדבר שלח הודעת טקסט/וואטסאפ אך לא תיאר תגובה מהמורה (למשל "שלחתי לה הודעה", "כתבתי לה ולא ענתה")
+- "correspondence" — חילופי הודעות דו-כיווניים (למשל "התכתבנו", "היא ענתה לי בהודעה")
+אם לא ברור מהתיאור, החזר "phone_call" כברירת מחדל. עבור routes אחרים החזר "communication_type": null.
+
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
 {
   "route": "teacher_call" | "admin_task" | "new_task_column" | "unclear",
   "teacher_name_spoken": "השם שנאמר עבור המורה (רלוונטי רק ל-teacher_call), אחרת null",
+  "communication_type": "phone_call" | "message_sent" | "correspondence" | null,
   "summary": "סיכום קצר של התוכן, 2-3 משפטים (לא רלוונטי ל-new_task_column)",
   "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
   "mentioned_dates": ["YYYY-MM-DD"],
@@ -22,6 +29,7 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 אם לא הוזכר שם מורה, החזר "teacher_name_spoken": null. אם אין מטלות המשך, החזר "action_items": [].`
 
 const VALID_ROUTES = new Set(['teacher_call', 'admin_task', 'new_task_column', 'unclear'])
+const VALID_COMMUNICATION_TYPES = new Set(['phone_call', 'message_sent', 'correspondence'])
 
 function extractJson(text) {
   const trimmed = text.trim()
@@ -49,9 +57,13 @@ export async function analyzeCallTranscript(transcript) {
     throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
   }
 
+  const route = VALID_ROUTES.has(parsed.route) ? parsed.route : 'unclear'
   return {
-    route: VALID_ROUTES.has(parsed.route) ? parsed.route : 'unclear',
+    route,
     teacher_name_spoken: parsed.teacher_name_spoken ?? null,
+    communication_type: route === 'teacher_call'
+      ? (VALID_COMMUNICATION_TYPES.has(parsed.communication_type) ? parsed.communication_type : 'phone_call')
+      : null,
     summary: parsed.summary ?? '',
     action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],

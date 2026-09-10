@@ -24,6 +24,7 @@ export default function ContactDetail() {
   const [loading, setLoading] = useState(true)
   const [editingInteractionId, setEditingInteractionId] = useState(null)
   const [editContent, setEditContent] = useState('')
+  const [editType, setEditType] = useState('')
   const [expandedIds, setExpandedIds] = useState(() => new Set())
 
   useEffect(() => {
@@ -86,11 +87,13 @@ export default function ContactDetail() {
   function startEditInteraction(i) {
     setEditingInteractionId(i.id)
     setEditContent(i.content || '')
+    setEditType(i.type)
   }
 
   function cancelEditInteraction() {
     setEditingInteractionId(null)
     setEditContent('')
+    setEditType('')
   }
 
   async function toggleActionItem(interaction, itemIndex) {
@@ -124,14 +127,16 @@ export default function ContactDetail() {
 
   async function saveInteractionContent(i) {
     try {
+      const updates = { content: editContent, ...(i.type !== 'journal' ? { type: editType } : {}) }
       const { error } = await supabase
         .from('interactions')
-        .update({ content: editContent })
+        .update(updates)
         .eq('id', i.id)
       if (error) throw error
-      setInteractions(prev => prev.map(x => (x.id === i.id ? { ...x, content: editContent } : x)))
+      setInteractions(prev => prev.map(x => (x.id === i.id ? { ...x, ...updates } : x)))
       setEditingInteractionId(null)
       setEditContent('')
+      setEditType('')
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message)
     }
@@ -286,6 +291,14 @@ export default function ContactDetail() {
                       )}
                       {editingInteractionId === i.id ? (
                         <div className="space-y-2">
+                          {i.type !== 'journal' && (
+                            <select value={editType} onChange={e => setEditType(e.target.value)}
+                              className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                              {INTERACTION_TYPES.map(t => (
+                                <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
+                              ))}
+                            </select>
+                          )}
                           <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
                             rows={3}
                             className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" />
@@ -381,12 +394,20 @@ function InfoRow({ label, value, dir }) {
   )
 }
 
+const INTERACTION_TYPES = [
+  { value: 'phone_call', label: 'שיחת טלפון', icon: '📞' },
+  { value: 'message_sent', label: 'הודעה', icon: '😞' },
+  { value: 'correspondence', label: 'התכתבות', icon: '✉️' },
+  { value: 'meeting', label: 'פגישה', icon: '🤝' },
+]
+
 function typeIcon(type) {
-  return { whatsapp_sent: '📤', whatsapp_received: '📥', meeting: '🤝', phone_call: '📞', journal: '📝' }[type] || '📋'
+  if (type === 'journal') return '📝'
+  return INTERACTION_TYPES.find(t => t.value === type)?.icon || '📋'
 }
 function typeLabel(type, metadata) {
   if (type === 'journal') return metadata?.column_label || 'רשומת יומן'
-  return { whatsapp_sent: 'הודעה נשלחה', whatsapp_received: 'הודעה התקבלה', meeting: 'פגישה', phone_call: 'שיחת טלפון' }[type] || type
+  return INTERACTION_TYPES.find(t => t.value === type)?.label || type
 }
 function statusColor(s) {
   return { scheduled: 'bg-blue-100 text-blue-700', completed: 'bg-green-100 text-green-700', cancelled: 'bg-gray-100 text-gray-600', no_show: 'bg-red-100 text-red-700' }[s] || ''

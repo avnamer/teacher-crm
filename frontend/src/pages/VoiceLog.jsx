@@ -136,7 +136,7 @@ export default function VoiceLog() {
 
   function saveWithoutSummary() {
     setAnalyzeError(null)
-    setAnalysis({ route: 'teacher_call', summary: transcript, action_items: [], mentioned_dates: [], teacher_name_spoken: null, column_label: null })
+    setAnalysis({ route: 'teacher_call', communication_type: 'phone_call', summary: transcript, action_items: [], mentioned_dates: [], teacher_name_spoken: null, column_label: null })
     setSelectedRoute('teacher_call')
     setSelectedTeacherId(null)
   }
@@ -144,7 +144,7 @@ export default function VoiceLog() {
   async function saveInteraction(targetContactId, targetName) {
     const { error } = await supabase.from('interactions').insert({
       contact_id: targetContactId,
-      type: 'phone_call',
+      type: analysis.communication_type || 'phone_call',
       content: analysis.summary,
       metadata: {
         transcript,

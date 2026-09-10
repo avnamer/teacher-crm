@@ -85,10 +85,10 @@ function firstSentence(text) {
   return match ? match[0].trim() : trimmed
 }
 
-// Short Hebrew label for a non-journal interaction type, used when it's more recent than
-// any manual journal entry — mirrors the labels in ContactDetail.jsx's typeLabel().
-function interactionTypeLabel(type) {
-  return { whatsapp_sent: 'הודעה נשלחה', whatsapp_received: 'הודעה התקבלה', meeting: 'פגישה', phone_call: 'שיחת טלפון' }[type] || type
+// Icon for a non-journal interaction type, used when it's more recent than any manual
+// journal entry — mirrors the icons in ContactDetail.jsx's typeIcon().
+function interactionTypeIcon(type) {
+  return { phone_call: '📞', message_sent: '😞', correspondence: '✉️', meeting: '🤝' }[type] || '📋'
 }
 
 function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
@@ -104,8 +104,8 @@ function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
     if (!source) return '-'
     const days = daysSince(source.created_at)
     const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
-    const prefix = useLatestOther ? `${interactionTypeLabel(latestOther.type)}: ` : ''
-    return `(${daysStr}) ${prefix}${firstSentence(source.content)}`
+    const prefix = useLatestOther ? `${interactionTypeIcon(latestOther.type)} ` : ''
+    return `${prefix}(${daysStr}) ${firstSentence(source.content)}`
   }
   const value = getCellValue(contact, col)
   if (col.source === 'core' && col.key === 'gender') {

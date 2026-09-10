@@ -141,3 +141,10 @@ Monday") that manages **only column metadata**, not a live sync:
 - No live Monday.com API call anywhere in the app (no admin board access available).
 - No change to the WhatsApp backend send mechanism — only new content sources feed into the
   existing template/placeholder system.
+- **Correction after further code review:** `backend/server.js` has no `/api/whatsapp/*` routes
+  at all (it only defines `/api/health`) — the "existing send pipeline" referenced above is UI +
+  database scaffolding (`message_templates`, `scheduled_messages`, `BulkSendModal`) with no
+  working backend behind it today. This is a pre-existing gap unrelated to this spec. Per user
+  confirmation, this plan does **not** build that backend — Feature 5 wires into the same
+  UI/flow that exists today (`BulkSendModal` + `backendFetch`), which will not actually deliver
+  messages until a WhatsApp backend is built separately, exactly as it doesn't today.

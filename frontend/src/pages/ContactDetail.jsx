@@ -110,6 +110,18 @@ export default function ContactDetail() {
     }
   }
 
+  async function deleteInteraction(i) {
+    if (!confirm('למחוק את האינטראקציה לצמיתות?')) return
+    try {
+      const { error } = await supabase.from('interactions').delete().eq('id', i.id)
+      if (error) throw error
+      setInteractions(prev => prev.filter(x => x.id !== i.id))
+      if (editingInteractionId === i.id) cancelEditInteraction()
+    } catch (err) {
+      alert('שגיאה במחיקה: ' + err.message)
+    }
+  }
+
   async function saveInteractionContent(i) {
     try {
       const { error } = await supabase
@@ -246,12 +258,10 @@ export default function ContactDetail() {
                       <span className="flex-1" />
                     )}
                     <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{timeLabel}</span>
-                    {(i.content || actionItems.length > 0) && (
-                      <button onClick={() => toggleExpand(i.id)}
-                        className="text-xs text-blue-600 hover:underline shrink-0 whitespace-nowrap">
-                        {expanded ? 'הצג פחות' : 'המשך קריאה'}
-                      </button>
-                    )}
+                    <button onClick={() => toggleExpand(i.id)}
+                      className="text-xs text-blue-600 hover:underline shrink-0 whitespace-nowrap">
+                      {expanded ? 'הצג פחות' : 'המשך קריאה'}
+                    </button>
                   </div>
                   {expanded && (
                     <div className="px-3 pb-3">
@@ -299,10 +309,16 @@ export default function ContactDetail() {
                       ) : (
                         <div className="flex items-start justify-between gap-2">
                           <p className="text-sm text-gray-600 whitespace-pre-wrap flex-1">{i.content}</p>
-                          <button onClick={() => startEditInteraction(i)}
-                            className="text-xs text-gray-400 hover:text-blue-600 shrink-0" title="ערוך תוכן">
-                            ✏️
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => startEditInteraction(i)}
+                              className="text-xs text-gray-400 hover:text-blue-600" title="ערוך תוכן">
+                              ✏️
+                            </button>
+                            <button onClick={() => deleteInteraction(i)}
+                              className="text-xs text-gray-400 hover:text-red-600" title="מחק אינטראקציה">
+                              🗑️
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

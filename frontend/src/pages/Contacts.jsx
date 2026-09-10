@@ -357,6 +357,20 @@ export default function Contacts() {
   const buckets = { green: [], orange: [], red: [] }
   for (const t of myTeachers) buckets[contactBucket(t, lastContactMap)].push(t)
 
+  const taskColumns = columns.filter(c => c.source === 'task')
+  const taskStats = ['monday', 'general'].map(taskSource => {
+    const cols = taskColumns.filter(c => c.taskSource === taskSource)
+    let done = 0
+    let total = 0
+    for (const teacher of myTeachers) {
+      for (const col of cols) {
+        total += 1
+        if (isTaskDone(teacher, col)) done += 1
+      }
+    }
+    return { taskSource, done, total }
+  })
+
   if (loading || !columnsLoaded) {
     return <div className="flex items-center justify-center h-64 text-gray-500">טוען...</div>
   }
@@ -371,6 +385,8 @@ export default function Contacts() {
         expanded={pendingTasksExpanded}
         onToggle={() => setPendingTasksExpanded(!pendingTasksExpanded)}
       />
+
+      <TaskStats stats={taskStats} />
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">אנשי קשר</h1>
@@ -633,6 +649,33 @@ function ContactStats({ buckets, expanded, onToggle }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Per-source task counters ─────────────────────────────────────
+const TASK_STAT_LABELS = { monday: 'משימות Monday', general: 'משימות כלליות' }
+
+function TaskStats({ stats }) {
+  const visible = stats.filter(s => s.total > 0)
+  if (visible.length === 0) return null
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {visible.map(s => {
+        const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
+        return (
+          <div key={s.taskSource} className="rounded-xl border border-gray-200 bg-white p-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-700">{TASK_STAT_LABELS[s.taskSource]}</span>
+              <span className="text-sm text-gray-500">{s.done} / {s.total}</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-2 rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

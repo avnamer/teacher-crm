@@ -1,6 +1,5 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
-import Dashboard from './pages/Dashboard.jsx'
 import Contacts from './pages/Contacts.jsx'
 import ContactDetail from './pages/ContactDetail.jsx'
 import Mentors from './pages/Mentors.jsx'
@@ -20,7 +19,7 @@ function App() {
 
       {/* Admin routes with layout */}
       <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Navigate to="/contacts" replace />} />
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/mentors" element={<Mentors />} />

@@ -14,13 +14,14 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 - "phone_call" — שיחת טלפון (למשל "התקשרתי אליה", "דיברנו בטלפון")
 - "message_sent" — המדבר שלח הודעת טקסט/וואטסאפ אך לא תיאר תגובה מהמורה (למשל "שלחתי לה הודעה", "כתבתי לה ולא ענתה")
 - "correspondence" — חילופי הודעות דו-כיווניים (למשל "התכתבנו", "היא ענתה לי בהודעה")
+- "meeting" — פגישה פנים אל פנים (למשל "נפגשנו בבית הספר", "הייתה לנו פגישה", "ביקרתי אצלה בכיתה")
 אם לא ברור מהתיאור, החזר "phone_call" כברירת מחדל. עבור routes אחרים החזר "communication_type": null.
 
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
 {
   "route": "teacher_call" | "admin_task" | "new_task_column" | "unclear",
   "teacher_name_spoken": "השם שנאמר עבור המורה (רלוונטי רק ל-teacher_call), אחרת null",
-  "communication_type": "phone_call" | "message_sent" | "correspondence" | null,
+  "communication_type": "phone_call" | "message_sent" | "correspondence" | "meeting" | null,
   "summary": "סיכום קצר של התוכן, 2-3 משפטים (לא רלוונטי ל-new_task_column)",
   "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
   "mentioned_dates": ["YYYY-MM-DD"],
@@ -29,7 +30,7 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 אם לא הוזכר שם מורה, החזר "teacher_name_spoken": null. אם אין מטלות המשך, החזר "action_items": [].`
 
 const VALID_ROUTES = new Set(['teacher_call', 'admin_task', 'new_task_column', 'unclear'])
-const VALID_COMMUNICATION_TYPES = new Set(['phone_call', 'message_sent', 'correspondence'])
+const VALID_COMMUNICATION_TYPES = new Set(['phone_call', 'message_sent', 'correspondence', 'meeting'])
 
 function extractJson(text) {
   const trimmed = text.trim()

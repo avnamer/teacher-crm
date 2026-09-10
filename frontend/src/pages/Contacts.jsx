@@ -107,6 +107,7 @@ export default function Contacts() {
   const [showAddMeetingModal, setShowAddMeetingModal] = useState(false)
   const [editContact, setEditContact] = useState(null)
   const [showColumnManager, setShowColumnManager] = useState(false)
+  const [showMondayColumns, setShowMondayColumns] = useState(false)
   const [editingCell, setEditingCell] = useState(null) // { contactId, colKey } | null
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
@@ -380,6 +381,12 @@ export default function Contacts() {
           >
             ⚙️ עמודות
           </button>
+          <button
+            onClick={() => setShowMondayColumns(true)}
+            className="px-4 py-2 bg-orange-50 text-orange-700 rounded-lg text-sm hover:bg-orange-100 transition-colors border border-orange-200"
+          >
+            🔄 עמודות Monday
+          </button>
           <Link
             to="/import"
             className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
@@ -535,6 +542,14 @@ export default function Contacts() {
         <ColumnManagerModal
           columns={columns}
           onClose={() => setShowColumnManager(false)}
+          onSave={saveColumns}
+        />
+      )}
+
+      {showMondayColumns && (
+        <MondayColumnsModal
+          columns={columns}
+          onClose={() => setShowMondayColumns(false)}
           onSave={saveColumns}
         />
       )}
@@ -932,6 +947,105 @@ function ColumnManagerModal({ columns, onClose, onSave }) {
               עמודת משימה — תיבת סימון (✓) לכל מורה
             </label>
           </div>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'שומר...' : 'שמור'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+            ביטול
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MondayColumnsModal({ columns, onClose, onSave }) {
+  const [local, setLocal] = useState(columns)
+  const [newLabel, setNewLabel] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const mondayCols = local.filter(c => c.source === 'task' && c.taskSource === 'monday')
+
+  function slugify(label) {
+    return label.trim().toLowerCase().replace(/\s+/g, '_')
+  }
+
+  function addColumn() {
+    const label = newLabel.trim()
+    if (!label) return
+    const key = slugify(label)
+    if (local.some(c => c.key === key)) {
+      alert('כבר קיימת עמודת Monday עם המזהה הזה')
+      return
+    }
+    setLocal([...local, { key, label, source: 'task', taskSource: 'monday', visible: true, locked: false }])
+    setNewLabel('')
+  }
+
+  function renameColumn(key, label) {
+    setLocal(local.map(c => (c.key === key ? { ...c, label } : c)))
+  }
+
+  function removeColumn(key) {
+    if (!confirm('להסיר את עמודת ה-Monday? הנתונים הקיימים לא יימחקו, רק יוסתרו.')) return
+    setLocal(local.filter(c => c.key !== key))
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    await onSave(local)
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-2">עמודות Monday</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          אין חיבור חי ל-API של Monday (אין הרשאת ניהול לבורד). כאן אפשר לנהל אילו עמודות Monday
+          קיימות ומוצגות בטבלה. העדכון בפועל של הנתונים נעשה כשמבקשים מקלוד קוד להריץ סנכרון
+          (סקיל monday-integration) — הוא כותב ישירות לתוך Supabase לפי המפתחות (keys) שמוגדרים
+          כאן.
+        </p>
+
+        <div className="space-y-1 mb-6">
+          {mondayCols.length === 0 && (
+            <p className="text-xs text-gray-400 py-2">אין עמודות Monday מוגדרות</p>
+          )}
+          {mondayCols.map(col => (
+            <div key={col.key} className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100">
+              <input
+                value={col.label}
+                onChange={e => renameColumn(col.key, e.target.value)}
+                className="flex-1 px-2 py-1 border rounded text-sm outline-none"
+              />
+              <code className="text-xs text-gray-400" dir="ltr">{col.key}</code>
+              <button onClick={() => removeColumn(col.key)} className="text-red-400 hover:text-red-600 text-xs">
+                הסר
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="mb-6 flex gap-2">
+          <input
+            placeholder="שם עמודת Monday חדשה"
+            value={newLabel}
+            onChange={e => setNewLabel(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addColumn()}
+            className="flex-1 px-3 py-2 border rounded-lg outline-none text-sm"
+          />
+          <button onClick={addColumn} className="px-3 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700">
+            + הוסף
+          </button>
         </div>
 
         <div className="flex gap-2 pt-2">

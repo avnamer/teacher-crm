@@ -19,6 +19,15 @@ const ROUTES = [
   { value: 'new_task_column', label: '📋 משימה לכל המורים' },
 ]
 
+// Mirrors INTERACTION_TYPES in ContactDetail.jsx — kept in sync manually since the two
+// pages don't share a module today.
+const COMMUNICATION_TYPES = [
+  { value: 'phone_call', label: 'שיחת טלפון', icon: '📞' },
+  { value: 'message_sent', label: 'הודעה', icon: '😞' },
+  { value: 'correspondence', label: 'התכתבות', icon: '📜' },
+  { value: 'meeting', label: 'פגישה', icon: '🤝' },
+]
+
 async function ensureAdminContact() {
   const { data: existing, error: findErr } = await supabase
     .from('contacts')
@@ -394,6 +403,30 @@ export default function VoiceLog() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {selectedRoute === 'teacher_call' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">סוג האינטראקציה</label>
+              <div className="flex gap-2 flex-wrap">
+                {COMMUNICATION_TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setAnalysis({ ...analysis, communication_type: t.value })}
+                    className={`px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-60 ${
+                      analysis.communication_type === t.value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {t.icon} {t.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-gray-400 text-xs mt-1">זוהה אוטומטית מהתמלול — ניתן לתקן במידת הצורך</p>
             </div>
           )}
 

@@ -19,6 +19,12 @@ const DEFAULT_COLUMNS = [
   { key: 'last_contact_journal', label: 'יומן קשר אחרון', source: 'journal', visible: true, locked: false, width: 220 },
 ]
 
+// The pseudo-contact row representing "מנהל המערכת" (created by the voice-log
+// admin_task route) — pinned to the top of the table and excluded from teacher stats.
+function isAdminRow(contact) {
+  return contact.custom_fields?.is_admin_row === true
+}
+
 // Show only Avner's teachers: mentor_name must match, and role must be a teacher role.
 function isMyTeacher(contact) {
   if (contact.custom_fields?.mentor_name !== MENTOR) return false
@@ -325,7 +331,7 @@ export default function Contacts() {
     const matchGender = genderFilter === 'all' || c.gender === genderFilter
     const matchRole = showAll || isMyTeacher(c)
     return matchSearch && matchGender && matchRole
-  })
+  }).sort((a, b) => (isAdminRow(b) ? 1 : 0) - (isAdminRow(a) ? 1 : 0)) // pin admin row to the top
 
   // Contact-recency stats — always over "my teachers", regardless of the search/gender/showAll filters above.
   const myTeachers = contacts.filter(isMyTeacher)

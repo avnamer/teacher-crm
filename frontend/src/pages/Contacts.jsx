@@ -17,6 +17,9 @@ const DEFAULT_COLUMNS = [
   { key: 'class_name', label: 'כיתה', source: 'core', visible: false, locked: false, width: 90 },
   { key: 'birthday', label: 'יום הולדת', source: 'core', visible: false, locked: false, width: 130 },
   { key: 'last_contact_journal', label: 'יומן קשר אחרון', source: 'journal', visible: true, locked: false, width: 220 },
+  { key: 'challenge1', label: 'אתגר 1', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
+  { key: 'challenge2', label: 'אתגר 2', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
+  { key: 'challenge3', label: 'אתגר 3', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
 ]
 
 // The pseudo-contact row representing "מנהל המערכת" (created by the voice-log

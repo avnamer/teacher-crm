@@ -9,7 +9,6 @@ import WhatsApp from './pages/WhatsApp.jsx'
 import Meetings from './pages/Meetings.jsx'
 import Settings from './pages/Settings.jsx'
 import BookMeeting from './pages/BookMeeting.jsx'
-import MondayTasks from './pages/MondayTasks.jsx'
 import VoiceLog from './pages/VoiceLog.jsx'
 import NotFound from './pages/NotFound.jsx'
 
@@ -30,7 +29,6 @@ function App() {
         <Route path="/meetings" element={<Meetings />} />
         <Route path="/voice-log" element={<VoiceLog />} />
         <Route path="/settings" element={<Settings />} />
-        <Route path="/monday" element={<MondayTasks />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

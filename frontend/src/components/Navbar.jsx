@@ -9,7 +9,6 @@ const links = [
   { to: '/whatsapp', label: 'WhatsApp', icon: '💬' },
   { to: '/meetings', label: 'פגישות', icon: '📅' },
   { to: '/voice-log', label: 'תיעוד שיחה', icon: '🎙' },
-  { to: '/monday', label: 'משימות Monday', icon: '📋' },
   { to: '/settings', label: 'הגדרות', icon: '⚙️' },
 ]
 

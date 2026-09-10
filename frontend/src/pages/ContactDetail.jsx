@@ -87,7 +87,10 @@ export default function ContactDetail() {
   function startEditInteraction(i) {
     setEditingInteractionId(i.id)
     setEditContent(i.content || '')
-    setEditType(i.type)
+    // Journal entries aren't a selectable target type (only a real communication type
+    // makes sense to classify *into*) — '' means "leave as journal", so saving without
+    // touching the dropdown never silently reclassifies it as whatever option is first.
+    setEditType(i.type === 'journal' ? '' : i.type)
   }
 
   function cancelEditInteraction() {
@@ -127,7 +130,7 @@ export default function ContactDetail() {
 
   async function saveInteractionContent(i) {
     try {
-      const updates = { content: editContent, type: editType }
+      const updates = { content: editContent, ...(editType ? { type: editType } : {}) }
       const { error } = await supabase
         .from('interactions')
         .update(updates)
@@ -293,6 +296,7 @@ export default function ContactDetail() {
                         <div className="space-y-2">
                           <select value={editType} onChange={e => setEditType(e.target.value)}
                             className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                            {editType === '' && <option value="">📝 רשומת יומן (ללא סיווג)</option>}
                             {INTERACTION_TYPES.map(t => (
                               <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
                             ))}
@@ -397,7 +401,6 @@ const INTERACTION_TYPES = [
   { value: 'message_sent', label: 'הודעה', icon: '😞' },
   { value: 'correspondence', label: 'התכתבות', icon: '📜' },
   { value: 'meeting', label: 'פגישה', icon: '🤝' },
-  { value: 'journal', label: 'רשומת יומן', icon: '📝' },
 ]
 
 function typeIcon(type) {

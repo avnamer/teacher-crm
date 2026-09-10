@@ -127,7 +127,7 @@ export default function ContactDetail() {
 
   async function saveInteractionContent(i) {
     try {
-      const updates = { content: editContent, ...(i.type !== 'journal' ? { type: editType } : {}) }
+      const updates = { content: editContent, type: editType }
       const { error } = await supabase
         .from('interactions')
         .update(updates)
@@ -291,14 +291,12 @@ export default function ContactDetail() {
                       )}
                       {editingInteractionId === i.id ? (
                         <div className="space-y-2">
-                          {i.type !== 'journal' && (
-                            <select value={editType} onChange={e => setEditType(e.target.value)}
-                              className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-                              {INTERACTION_TYPES.map(t => (
-                                <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
-                              ))}
-                            </select>
-                          )}
+                          <select value={editType} onChange={e => setEditType(e.target.value)}
+                            className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                            {INTERACTION_TYPES.map(t => (
+                              <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
+                            ))}
+                          </select>
                           <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
                             rows={3}
                             className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre-wrap" />
@@ -397,8 +395,9 @@ function InfoRow({ label, value, dir }) {
 const INTERACTION_TYPES = [
   { value: 'phone_call', label: 'שיחת טלפון', icon: '📞' },
   { value: 'message_sent', label: 'הודעה', icon: '😞' },
-  { value: 'correspondence', label: 'התכתבות', icon: '✉️' },
+  { value: 'correspondence', label: 'התכתבות', icon: '📜' },
   { value: 'meeting', label: 'פגישה', icon: '🤝' },
+  { value: 'journal', label: 'רשומת יומן', icon: '📝' },
 ]
 
 function typeIcon(type) {

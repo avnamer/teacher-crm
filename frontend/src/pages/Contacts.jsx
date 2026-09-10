@@ -88,7 +88,7 @@ function firstSentence(text) {
 // Icon for a non-journal interaction type, used when it's more recent than any manual
 // journal entry — mirrors the icons in ContactDetail.jsx's typeIcon().
 function interactionTypeIcon(type) {
-  return { phone_call: '📞', message_sent: '😞', correspondence: '✉️', meeting: '🤝' }[type] || '📋'
+  return { phone_call: '📞', message_sent: '😞', correspondence: '📜', meeting: '🤝' }[type] || '📋'
 }
 
 function formatDisplay(contact, col, journalMap, lastNonJournalMap) {

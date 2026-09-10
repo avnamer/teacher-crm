@@ -787,7 +787,7 @@ function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCanc
 function ColumnManagerModal({ columns, onClose, onSave }) {
   const [local, setLocal] = useState(columns)
   const [newLabel, setNewLabel] = useState('')
-  const [newIsJournal, setNewIsJournal] = useState(false)
+  const [newColType, setNewColType] = useState('custom') // 'custom' | 'journal' | 'task'
   const [saving, setSaving] = useState(false)
 
   function toggleVisible(key) {
@@ -814,9 +814,13 @@ function ColumnManagerModal({ columns, onClose, onSave }) {
       alert('כבר קיימת עמודה בשם הזה')
       return
     }
-    setLocal([...local, { key: label, label, source: newIsJournal ? 'journal' : 'custom', visible: true, locked: false }])
+    const base = { key: label, label, visible: true, locked: false }
+    const col = newColType === 'task'
+      ? { ...base, source: 'task', taskSource: 'general' }
+      : { ...base, source: newColType }
+    setLocal([...local, col])
     setNewLabel('')
-    setNewIsJournal(false)
+    setNewColType('custom')
   }
 
   async function handleSave() {
@@ -868,8 +872,14 @@ function ColumnManagerModal({ columns, onClose, onSave }) {
                 {col.source === 'journal' && (
                   <span className="text-xs text-blue-400">(יומן/אירועים)</span>
                 )}
+                {col.source === 'task' && col.taskSource === 'general' && (
+                  <span className="text-xs text-purple-400">(משימה)</span>
+                )}
+                {col.source === 'task' && col.taskSource === 'monday' && (
+                  <span className="text-xs text-orange-400">(משימת Monday)</span>
+                )}
               </label>
-              {(col.source === 'custom' || col.source === 'journal') && (
+              {(col.source === 'custom' || col.source === 'journal' || col.source === 'task') && (
                 <button
                   onClick={() => removeColumn(col.key)}
                   className="text-red-400 hover:text-red-600 text-xs"
@@ -897,15 +907,23 @@ function ColumnManagerModal({ columns, onClose, onSave }) {
               + הוסף
             </button>
           </div>
-          <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={newIsJournal}
-              onChange={e => setNewIsJournal(e.target.checked)}
-              className="w-3.5 h-3.5"
-            />
-            עמודת יומן / אירועים — כל כתיבה נשמרת כרשומה חדשה עם תאריך ושעה, במקום להחליף את הקודמת
-          </label>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <input type="radio" name="newColType" checked={newColType === 'custom'}
+                onChange={() => setNewColType('custom')} className="w-3.5 h-3.5" />
+              טקסט רגיל
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+              <input type="radio" name="newColType" checked={newColType === 'journal'}
+                onChange={() => setNewColType('journal')} className="w-3.5 h-3.5" />
+              עמודת יומן / אירועים — כל כתיבה נשמרת כרשומה חדשה עם תאריך ושעה, במקום להחליף את הקודמת
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+              <input type="radio" name="newColType" checked={newColType === 'task'}
+                onChange={() => setNewColType('task')} className="w-3.5 h-3.5" />
+              עמודת משימה — תיבת סימון (✓) לכל מורה
+            </label>
+          </div>
         </div>
 
         <div className="flex gap-2 pt-2">

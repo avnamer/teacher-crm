@@ -148,7 +148,7 @@ export default function WhatsApp() {
       <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
         <h3 className="font-medium text-gray-700 mb-2">משתנים זמינים בתבניות:</h3>
         <div className="flex flex-wrap gap-2 text-sm">
-          {['{{name}}', '{{school}}', '{{class_name}}', '{{hackathon_date}}', '{{phone}}'].map(v => (
+          {['{{name}}', '{{school}}', '{{class_name}}', '{{hackathon_date}}', '{{phone}}', '{{open_tasks}}'].map(v => (
             <code key={v} className="bg-white px-2 py-1 rounded border text-gray-600">{v}</code>
           ))}
         </div>
@@ -184,6 +184,7 @@ function resolveMessage(body, contact) {
     .replace(/\{\{hackathon_date\}\}/g, contact.hackathon_date
       ? new Date(contact.hackathon_date).toLocaleDateString('he-IL') : '')
     .replace(/\{\{phone\}\}/g, contact.phone || '')
+    .replace(/\{\{open_tasks\}\}/g, contact._open_tasks_text || '')
 }
 
 function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = null }) {
@@ -543,7 +544,7 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
   )
 }
 
-export { BulkSendModal }
+export { BulkSendModal, resolveMessage }
 
 function TemplateEditor({ template, onClose, onSaved }) {
   const [form, setForm] = useState({

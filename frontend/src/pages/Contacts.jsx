@@ -357,6 +357,9 @@ export default function Contacts() {
   const buckets = { green: [], orange: [], red: [] }
   for (const t of myTeachers) buckets[contactBucket(t, lastContactMap)].push(t)
 
+  // Counts every task column regardless of its own visible/hidden state (same precedent as
+  // buckets above) — hiding a column declutters the table view, it doesn't mean the task no
+  // longer matters for the aggregate progress count.
   const taskColumns = columns.filter(c => c.source === 'task')
   const taskStats = ['monday', 'general'].map(taskSource => {
     const cols = taskColumns.filter(c => c.taskSource === taskSource)
@@ -473,12 +476,12 @@ export default function Contacts() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="text-sm" style={{ tableLayout: 'fixed', width: visibleColumns.reduce((sum, c) => sum + (c.width || DEFAULT_WIDTH), 0) + 120 }}>
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="border-b border-gray-200">
                 <tr>
                   {visibleColumns.map(col => (
                     <th
                       key={col.key}
-                      className="relative text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis"
+                      className="sticky top-0 z-10 bg-gray-50 relative text-right px-4 py-3 font-medium text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis"
                       style={{ width: col.width || DEFAULT_WIDTH }}
                     >
                       {col.label}
@@ -489,7 +492,7 @@ export default function Contacts() {
                       />
                     </th>
                   ))}
-                  <th className="text-center px-4 py-3 font-medium text-gray-600" style={{ width: 120 }}>פעולות</th>
+                  <th className="sticky top-0 z-10 bg-gray-50 text-center px-4 py-3 font-medium text-gray-600" style={{ width: 120 }}>פעולות</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -655,6 +658,9 @@ function ContactStats({ buckets, expanded, onToggle }) {
 
 // ─── Per-source task counters ─────────────────────────────────────
 const TASK_STAT_LABELS = { monday: 'משימות Monday', general: 'משימות כלליות' }
+// Matches the color convention already used elsewhere in this file: orange for Monday-sourced
+// task columns (the "(משימת Monday)" tag, the "🔄 עמודות Monday" button), purple for general ones.
+const TASK_STAT_BAR_COLOR = { monday: 'bg-orange-500', general: 'bg-purple-500' }
 
 function TaskStats({ stats }) {
   const visible = stats.filter(s => s.total > 0)
@@ -671,7 +677,7 @@ function TaskStats({ stats }) {
               <span className="text-sm text-gray-500">{s.done} / {s.total}</span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-2 rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+              <div className={`h-2 rounded-full transition-all ${TASK_STAT_BAR_COLOR[s.taskSource]}`} style={{ width: `${pct}%` }} />
             </div>
           </div>
         )

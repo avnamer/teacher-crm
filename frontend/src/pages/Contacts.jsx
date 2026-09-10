@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
+// resolveMessage isn't called directly here yet; wired into use once BulkSendModal consumes
+// presetContactOverride (see TaskComposerModal below).
+// eslint-disable-next-line no-unused-vars
 import { BulkSendModal, resolveMessage } from './WhatsApp.jsx'
 
 const MENTOR = 'אבנר'
@@ -763,6 +766,14 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
 function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCancel, onSave }) {
   const editType = getEditType(col)
   const [savingTask, setSavingTask] = useState(false)
+  // Journal cells always start blank — writing in them adds a new dated entry, it never edits the last one.
+  const rawValue = editType === 'journal' ? '' : getCellValue(contact, col)
+  const [value, setValue] = useState(rawValue)
+
+  // All hooks above must run unconditionally on every render (Rules of Hooks) — the task
+  // branch below returns early and never uses `value`/`setValue`, but they still need to be
+  // declared before any conditional return, same reasoning as `savingTask` above.
+  useEffect(() => { setValue(rawValue) }, [isEditing])
 
   if (editType === 'task') {
     const done = isTaskDone(contact, col)
@@ -792,12 +803,6 @@ function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCanc
       </button>
     )
   }
-
-  // Journal cells always start blank — writing in them adds a new dated entry, it never edits the last one.
-  const rawValue = editType === 'journal' ? '' : getCellValue(contact, col)
-  const [value, setValue] = useState(rawValue)
-
-  useEffect(() => { setValue(rawValue) }, [isEditing])
 
   if (!isEditing) {
     const display = formatDisplay(contact, col, journalMap)
@@ -906,6 +911,8 @@ function TaskComposerModal({ teacher, taskColumns, templates, onClose }) {
 
   if (sending) {
     const presetContact = { ...teacher, _open_tasks_text: openTasksText }
+    // presetContactOverride is not yet read by BulkSendModal (that wiring lands in a follow-up
+    // change) — passing it here is a harmless no-op until then, not a bug.
     return (
       <BulkSendModal
         templates={templates}

@@ -833,7 +833,10 @@ function ColumnManagerModal({ columns, onClose, onSave }) {
   function addColumn() {
     const label = newLabel.trim()
     if (!label) return
-    if (local.some(c => c.label === label)) {
+    // Check both label and key: this column's key equals its label, but a Monday column
+    // (created via the separate Monday-columns panel) gets a slugified key that could
+    // coincidentally match a label typed here — guard against silently sharing storage.
+    if (local.some(c => c.label === label || c.key === label)) {
       alert('כבר קיימת עמודה בשם הזה')
       return
     }
@@ -982,7 +985,7 @@ function MondayColumnsModal({ columns, onClose, onSave }) {
     if (!label) return
     const key = slugify(label)
     if (local.some(c => c.key === key)) {
-      alert('כבר קיימת עמודת Monday עם המזהה הזה')
+      alert('כבר קיימת עמודה עם המזהה הזה (ייתכן שזו עמודה כללית עם שם דומה)')
       return
     }
     setLocal([...local, { key, label, source: 'task', taskSource: 'monday', visible: true, locked: false }])

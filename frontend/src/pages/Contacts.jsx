@@ -118,7 +118,7 @@ export default function Contacts() {
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
   const [lastContactMap, setLastContactMap] = useState({}) // { [contactId]: latest created_at across all interactions }
-  const [statsExpanded, setStatsExpanded] = useState(false)
+  const [expandedBucket, setExpandedBucket] = useState(null) // 'green' | 'orange' | 'red' | null
   const [pendingTasksMap, setPendingTasksMap] = useState({}) // { [contactId]: [{text, due_date}, ...] } — unresolved action items from phone-call logs
   const [pendingTasksExpanded, setPendingTasksExpanded] = useState(false)
 
@@ -391,7 +391,11 @@ export default function Contacts() {
 
   return (
     <div className="space-y-4">
-      <ContactStats buckets={buckets} expanded={statsExpanded} onToggle={() => setStatsExpanded(!statsExpanded)} />
+      <ContactStats
+        buckets={buckets}
+        expandedBucket={expandedBucket}
+        onToggleBucket={key => setExpandedBucket(prev => (prev === key ? null : key))}
+      />
 
       <PendingTasksBanner
         pendingTasksMap={pendingTasksMap}
@@ -636,47 +640,43 @@ const STAT_TILES = [
   { key: 'red', label: 'לא דיברתי מעל שבועיים / אין קשר מתועד', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' },
 ]
 
-function ContactStats({ buckets, expanded, onToggle }) {
+function ContactStats({ buckets, expandedBucket, onToggleBucket }) {
+  const activeTile = STAT_TILES.find(t => t.key === expandedBucket)
+
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {STAT_TILES.map(tile => (
-          <div key={tile.key} className={`rounded-xl border p-4 ${tile.bg} ${tile.border}`}>
+          <button
+            key={tile.key}
+            type="button"
+            onClick={() => onToggleBucket(tile.key)}
+            className={`w-full text-right rounded-xl border p-4 transition-shadow hover:shadow-md ${tile.bg} ${tile.border} ${expandedBucket === tile.key ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
+          >
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-2.5 h-2.5 rounded-full ${tile.dot}`} />
               <span className={`text-sm font-medium ${tile.text}`}>{tile.label}</span>
             </div>
             <div className={`text-3xl font-black ${tile.text}`}>{buckets[tile.key].length}</div>
-          </div>
+          </button>
         ))}
       </div>
 
-      <button
-        onClick={onToggle}
-        className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-      >
-        {expanded ? '▲ הסתר שמות' : '▼ הצג שמות מורים לפי קטגוריה'}
-      </button>
-
-      {expanded && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {STAT_TILES.map(tile => (
-            <div key={tile.key} className={`rounded-xl border p-3 ${tile.bg} ${tile.border}`}>
-              {buckets[tile.key].length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-2">—</p>
-              ) : (
-                <ul className="space-y-1">
-                  {buckets[tile.key].map(c => (
-                    <li key={c.id}>
-                      <Link to={`/contacts/${c.id}`} className={`text-sm hover:underline ${tile.text}`}>
-                        {c.name}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
+      {activeTile && (
+        <div className={`rounded-xl border p-3 ${activeTile.bg} ${activeTile.border}`}>
+          {buckets[activeTile.key].length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-2">—</p>
+          ) : (
+            <ul className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1">
+              {buckets[activeTile.key].map(c => (
+                <li key={c.id}>
+                  <Link to={`/contacts/${c.id}`} className={`text-sm hover:underline ${activeTile.text}`}>
+                    {c.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

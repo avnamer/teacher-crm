@@ -1,10 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
-// resolveMessage isn't called directly here yet; wired into use once BulkSendModal consumes
-// presetContactOverride (see TaskComposerModal below).
-// eslint-disable-next-line no-unused-vars
-import { BulkSendModal, resolveMessage } from './WhatsApp.jsx'
+import { BulkSendModal } from './WhatsApp.jsx'
 
 const MENTOR = 'אבנר'
 

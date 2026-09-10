@@ -550,7 +550,7 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
   )
 }
 
-export { BulkSendModal, resolveMessage }
+export { BulkSendModal }
 
 function TemplateEditor({ template, onClose, onSaved }) {
   const [form, setForm] = useState({

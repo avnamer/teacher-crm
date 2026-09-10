@@ -187,7 +187,7 @@ function resolveMessage(body, contact) {
     .replace(/\{\{open_tasks\}\}/g, contact._open_tasks_text || '')
 }
 
-function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = null }) {
+function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = null, presetContactOverride = null }) {
   const [step, setStep] = useState(1)
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0] || null)
   const [filters, setFilters] = useState({ name: '', gender: 'all', school: '', dateFrom: '', dateTo: '' })
@@ -233,8 +233,14 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
         .select('*')
         .in('id', initialContactIds)
       if (error) throw error
-      setAllContacts(data || [])
-      setFilteredContacts(data || [])
+      // presetContactOverride carries transient client-only fields (e.g. _open_tasks_text) that
+      // don't exist in the database — merge it onto the matching loaded row so resolveMessage
+      // can see them, without persisting anything.
+      const merged = (data || []).map(c =>
+        presetContactOverride && c.id === presetContactOverride.id ? { ...c, ...presetContactOverride } : c
+      )
+      setAllContacts(merged)
+      setFilteredContacts(merged)
     } catch (err) {
       console.error(err)
     } finally {

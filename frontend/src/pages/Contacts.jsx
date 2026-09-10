@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
+import { BulkSendModal, resolveMessage } from './WhatsApp.jsx'
 
 const MENTOR = 'אבנר'
 
@@ -108,6 +109,8 @@ export default function Contacts() {
   const [editContact, setEditContact] = useState(null)
   const [showColumnManager, setShowColumnManager] = useState(false)
   const [showMondayColumns, setShowMondayColumns] = useState(false)
+  const [taskComposerTeacher, setTaskComposerTeacher] = useState(null) // contact | null
+  const [templates, setTemplates] = useState([])
   const [editingCell, setEditingCell] = useState(null) // { contactId, colKey } | null
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
@@ -119,6 +122,11 @@ export default function Contacts() {
   useEffect(() => {
     loadContacts()
     loadColumns()
+  }, [])
+
+  useEffect(() => {
+    supabase.from('message_templates').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setTemplates(data || []))
   }, [])
 
   useEffect(() => {
@@ -392,7 +400,7 @@ export default function Contacts() {
       <TaskStats stats={taskStats} />
 
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">אנשי קשר</h1>
+        <h1 className="text-2xl font-bold text-gray-800">דשבורד</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setShowColumnManager(true)}
@@ -536,6 +544,13 @@ export default function Contacts() {
                     ))}
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <button
+                        onClick={() => setTaskComposerTeacher(contact)}
+                        className="text-green-600 hover:text-green-800 text-xs ml-2"
+                        title="שלח תזכורת משימות ב-WhatsApp"
+                      >
+                        📲
+                      </button>
+                      <button
                         onClick={() => setEditContact(contact)}
                         className="text-blue-500 hover:text-blue-700 text-xs ml-2"
                       >
@@ -570,6 +585,15 @@ export default function Contacts() {
           columns={columns}
           onClose={() => setShowMondayColumns(false)}
           onSave={saveColumns}
+        />
+      )}
+
+      {taskComposerTeacher && (
+        <TaskComposerModal
+          teacher={taskComposerTeacher}
+          taskColumns={columns.filter(c => c.source === 'task')}
+          templates={templates}
+          onClose={() => setTaskComposerTeacher(null)}
         />
       )}
 
@@ -852,6 +876,87 @@ function EditableCell({ contact, col, journalMap, isEditing, onStartEdit, onCanc
       onKeyDown={handleKeyDown}
       className="w-full px-2 py-1 border border-blue-400 rounded outline-none text-sm"
     />
+  )
+}
+
+// ─── Per-teacher WhatsApp task composer ───────────────────────────
+const TASK_SOURCE_LABEL = { monday: 'Monday', general: 'כללי' }
+
+function TaskComposerModal({ teacher, taskColumns, templates, onClose }) {
+  const openTasks = taskColumns.filter(col => !isTaskDone(teacher, col))
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set(openTasks.map(c => c.key)))
+  const [sending, setSending] = useState(false)
+
+  function toggle(key) {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const selectedLabels = taskColumns
+    .filter(col => selectedKeys.has(col.key))
+    .map(col => `${col.label} (${TASK_SOURCE_LABEL[col.taskSource]})`)
+
+  const openTasksText = selectedLabels.length > 0
+    ? selectedLabels.map(l => `- ${l}`).join('\n')
+    : ''
+
+  if (sending) {
+    const presetContact = { ...teacher, _open_tasks_text: openTasksText }
+    return (
+      <BulkSendModal
+        templates={templates}
+        backendStatus="disconnected"
+        initialContactIds={[presetContact.id]}
+        presetContactOverride={presetContact}
+        onClose={onClose}
+      />
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-1">משימות פתוחות — {teacher.name}</h2>
+        <p className="text-xs text-gray-500 mb-4">בחר אילו משימות לכלול בהודעת התזכורת</p>
+
+        {openTasks.length === 0 ? (
+          <p className="text-sm text-gray-500 py-4">אין משימות פתוחות למורה זה 🎉</p>
+        ) : (
+          <div className="space-y-1 mb-6">
+            {openTasks.map(col => (
+              <label key={col.key} className="flex items-center gap-2 py-1.5 border-b border-gray-100 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedKeys.has(col.key)}
+                  onChange={() => toggle(col.key)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">{col.label}</span>
+                <span className="text-xs text-gray-400">({TASK_SOURCE_LABEL[col.taskSource]})</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => setSending(true)}
+            disabled={selectedLabels.length === 0 || templates.length === 0}
+            className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            title={templates.length === 0 ? 'צור תבנית הודעה תחילה בדף WhatsApp' : ''}
+          >
+            המשך לשליחה
+          </button>
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+            ביטול
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

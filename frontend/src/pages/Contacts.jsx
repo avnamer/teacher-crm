@@ -474,7 +474,7 @@ export default function Contacts() {
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[70vh]">
             <table className="text-sm" style={{ tableLayout: 'fixed', width: visibleColumns.reduce((sum, c) => sum + (c.width || DEFAULT_WIDTH), 0) + 120 }}>
               <thead className="border-b border-gray-200">
                 <tr>

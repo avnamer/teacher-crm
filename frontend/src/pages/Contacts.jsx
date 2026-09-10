@@ -76,15 +76,21 @@ function isTaskDone(contact, col) {
   return Boolean(value) && value !== 'לא הוגש'
 }
 
+// First sentence of a journal entry's free text, for the compact table view (full text is
+// still available via the cell's title tooltip).
+function firstSentence(text) {
+  if (!text) return '-'
+  const trimmed = text.trim()
+  const match = trimmed.match(/^[^.!?\n]+[.!?]?/)
+  return match ? match[0].trim() : trimmed
+}
+
 function formatDisplay(contact, col, journalMap) {
   if (col.source === 'task') return isTaskDone(contact, col) ? '✓' : ''
   if (col.source === 'journal') {
     const entry = journalMap?.[contact.id]?.[col.key]
     if (!entry) return '-'
-    const days = daysSince(entry.created_at)
-    const dateStr = new Date(entry.created_at).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
-    const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
-    return `${dateStr} (${daysStr})`
+    return firstSentence(entry.content)
   }
   const value = getCellValue(contact, col)
   if (col.source === 'core' && col.key === 'gender') {

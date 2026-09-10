@@ -90,7 +90,9 @@ function formatDisplay(contact, col, journalMap) {
   if (col.source === 'journal') {
     const entry = journalMap?.[contact.id]?.[col.key]
     if (!entry) return '-'
-    return firstSentence(entry.content)
+    const days = daysSince(entry.created_at)
+    const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+    return `(${daysStr}) ${firstSentence(entry.content)}`
   }
   const value = getCellValue(contact, col)
   if (col.source === 'core' && col.key === 'gender') {

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
+import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
+import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 
 const MENTOR = 'אבנר'
 
@@ -141,10 +143,18 @@ export default function Contacts() {
   const [expandedBucket, setExpandedBucket] = useState(null) // 'green' | 'orange' | 'red' | null
   const [pendingTasksMap, setPendingTasksMap] = useState({}) // { [contactId]: [{text, due_date}, ...] } — unresolved action items from phone-call logs
   const [pendingTasksExpanded, setPendingTasksExpanded] = useState(false)
+  const [pendingVoiceLogs, setPendingVoiceLogs] = useState([])
+  const [pendingVoiceLogsExpanded, setPendingVoiceLogsExpanded] = useState(false)
 
   useEffect(() => {
     loadContacts()
     loadColumns()
+  }, [])
+
+  useEffect(() => {
+    fetchPendingVoiceLogs(MENTOR)
+      .then(setPendingVoiceLogs)
+      .catch(err => console.error('Error loading pending voice logs:', err))
   }, [])
 
   useEffect(() => {
@@ -416,6 +426,15 @@ export default function Contacts() {
 
   return (
     <div className="space-y-4">
+      <PendingApprovalAccordion
+        items={pendingVoiceLogs}
+        teachers={myTeachers}
+        expanded={pendingVoiceLogsExpanded}
+        onToggle={() => setPendingVoiceLogsExpanded(v => !v)}
+        onApproved={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
+        onDeleted={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
+      />
+
       <ContactStats
         buckets={buckets}
         expandedBucket={expandedBucket}

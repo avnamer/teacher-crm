@@ -153,7 +153,7 @@ export default function VoiceLog() {
   async function saveInteraction(targetContactId, targetName) {
     const { error } = await supabase.from('interactions').insert({
       contact_id: targetContactId,
-      type: analysis.communication_type || 'phone_call',
+      type: analysis.communication_type,
       content: analysis.summary,
       metadata: {
         transcript,
@@ -197,6 +197,10 @@ export default function VoiceLog() {
     }
     if (selectedRoute === 'teacher_call' && !selectedTeacherId) {
       alert('יש לבחור מורה לפני השמירה')
+      return
+    }
+    if (selectedRoute === 'teacher_call' && !analysis.communication_type) {
+      alert('יש לבחור סוג אינטראקציה לפני השמירה')
       return
     }
     if (selectedRoute === 'admin_task' && !adminContactId) {
@@ -426,7 +430,9 @@ export default function VoiceLog() {
                   </button>
                 ))}
               </div>
-              <p className="text-gray-400 text-xs mt-1">זוהה אוטומטית מהתמלול — ניתן לתקן במידת הצורך</p>
+              {analysis.communication_type
+                ? <p className="text-gray-400 text-xs mt-1">זוהה אוטומטית מהתמלול — ניתן לתקן במידת הצורך</p>
+                : <p className="text-orange-600 text-xs mt-1">לא זוהה סוג אינטראקציה ברור מההקלטה — יש לבחור ידנית</p>}
             </div>
           )}
 

@@ -14,8 +14,8 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 - "phone_call" — שיחת טלפון (למשל "התקשרתי אליה", "דיברנו בטלפון")
 - "message_sent" — המדבר שלח הודעת טקסט/וואטסאפ אך לא תיאר תגובה מהמורה (למשל "שלחתי לה הודעה", "כתבתי לה ולא ענתה")
 - "correspondence" — חילופי הודעות דו-כיווניים (למשל "התכתבנו", "היא ענתה לי בהודעה")
-- "meeting" — פגישה פנים אל פנים (למשל "נפגשנו בבית הספר", "הייתה לנו פגישה", "ביקרתי אצלה בכיתה")
-אם לא ברור מהתיאור, החזר "phone_call" כברירת מחדל. עבור routes אחרים החזר "communication_type": null.
+- "meeting" — פגישה פנים אל פנים (למשל "נפגשנו בבית הספר", "הייתה לנו פגישה", "ביקרתי אצלה בכיתה", "עברתי אצלה")
+אם לא ניתן לקבוע בבירור איזה מארבעת הערוצים תואר, החזר "communication_type": null — אל תנחש ואל תבחר ברירת מחדל. עבור routes אחרים החזר "communication_type": null.
 
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
 {
@@ -63,7 +63,7 @@ export async function analyzeCallTranscript(transcript) {
     route,
     teacher_name_spoken: parsed.teacher_name_spoken ?? null,
     communication_type: route === 'teacher_call'
-      ? (VALID_COMMUNICATION_TYPES.has(parsed.communication_type) ? parsed.communication_type : 'phone_call')
+      ? (VALID_COMMUNICATION_TYPES.has(parsed.communication_type) ? parsed.communication_type : null)
       : null,
     summary: parsed.summary ?? '',
     action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],

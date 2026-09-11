@@ -66,12 +66,22 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
         const calendarWarning = await createCalendarEventsForActionItems(item.action_items, targetName, summary)
         if (calendarWarning) alert(calendarWarning)
       }
-      await deletePendingVoiceLog(item.id)
-      onApproved(item.id)
     } catch (err) {
       setError('אישור נכשל: ' + (err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message))
       setSaving(false)
+      return
     }
+
+    // The actual write succeeded at this point. Deleting the now-redundant pending row is
+    // best-effort cleanup — if it fails (e.g. a transient network blip), retrying the whole
+    // approval would re-run the write above and create a duplicate interaction/calendar event,
+    // which is worse than leaving one harmless orphaned row in pending_voice_logs.
+    try {
+      await deletePendingVoiceLog(item.id)
+    } catch (cleanupErr) {
+      console.error('אושר בהצלחה אך מחיקת הפריט הממתין נכשלה:', cleanupErr)
+    }
+    onApproved(item.id)
   }
 
   async function handleDelete() {

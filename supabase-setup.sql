@@ -197,3 +197,26 @@ ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
 ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
 ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
   CHECK (type IN ('message_sent', 'correspondence', 'meeting', 'phone_call', 'journal'));
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: טבלת פריטים ממתינים לאישור מהתיעוד הקולי (הרץ פעם אחת)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS pending_voice_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  mentor_name TEXT NOT NULL,
+  transcript TEXT NOT NULL,
+  route TEXT,
+  teacher_name_spoken TEXT,
+  matched_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  communication_type TEXT,
+  summary TEXT,
+  action_items JSONB DEFAULT '[]',
+  mentioned_dates JSONB DEFAULT '[]',
+  column_label TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_voice_logs_mentor_name ON pending_voice_logs(mentor_name);
+
+ALTER TABLE pending_voice_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public full access to pending_voice_logs" ON pending_voice_logs FOR ALL USING (true) WITH CHECK (true);

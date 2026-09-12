@@ -3,6 +3,9 @@ import { supabase } from '../lib/supabase.js'
 import { backendFetch } from '../lib/api.js'
 import SendQueueModal from '../components/SendQueueModal.jsx'
 import { messageForContact, phoneProblem, MANUAL_DRIVER, fetchDriver } from '../lib/whatsapp.js'
+import {
+  isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL,
+} from '../lib/teachers.js'
 
 export default function WhatsApp() {
   const [templates, setTemplates] = useState([])
@@ -173,7 +176,15 @@ function BulkSendModal({ templates, driver = MANUAL_DRIVER, onClose, initialCont
   const [step, setStep] = useState(1)
   const [showQueue, setShowQueue] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0] || null)
-  const [filters, setFilters] = useState({ name: '', gender: 'all', school: '', dateFrom: '', dateTo: '' })
+  const [filters, setFilters] = useState({
+    name: '', gender: 'all', school: '', dateFrom: '', dateTo: '',
+    // Task-based targeting: pick a task column and message only the teachers on the
+    // wrong side of it. 'not_done' is the default because chasing outstanding work is
+    // what this is for.
+    taskKey: '', taskStatus: 'not_done',
+    myTeachersOnly: true,
+  })
+  const [taskColumns, setTaskColumns] = useState([])
   const [allContacts, setAllContacts] = useState([])
   const [filteredContacts, setFilteredContacts] = useState([])
   const [loadingContacts, setLoadingContacts] = useState(false)
@@ -187,12 +198,13 @@ function BulkSendModal({ templates, driver = MANUAL_DRIVER, onClose, initialCont
       loadPresetContacts()
     } else {
       loadContacts()
+      loadTaskColumns(supabase).then(setTaskColumns)
     }
   }, [])
 
   useEffect(() => {
     if (!hasPresetContacts) applyFilters()
-  }, [filters, allContacts])
+  }, [filters, allContacts, taskColumns])
 
   async function loadContacts() {
     setLoadingContacts(true)
@@ -232,7 +244,26 @@ function BulkSendModal({ templates, driver = MANUAL_DRIVER, onClose, initialCont
   }
 
   function applyFilters() {
-    let result = allContacts
+    // The admin pseudo-row ("מנהל המערכת") is a container for admin tasks, not a
+    // person — it must never end up in a recipient list.
+    let result = allContacts.filter(c => !isAdminRow(c))
+
+    if (filters.myTeachersOnly) {
+      result = result.filter(isMyTeacher)
+    }
+
+    // Task targeting. Without scoping to actual teachers this would be wrong rather
+    // than merely broad: a contact who was never assigned the task has no value in
+    // custom_fields either, so they read as "not done" and would be chased for work
+    // that was never theirs. That's why myTeachersOnly defaults on.
+    if (filters.taskKey && filters.taskStatus !== 'all') {
+      const col = taskColumns.find(c => c.key === filters.taskKey)
+      if (col) {
+        const wantDone = filters.taskStatus === 'done'
+        result = result.filter(c => isTaskDone(c, col) === wantDone)
+      }
+    }
+
     if (filters.name) {
       const q = filters.name.toLowerCase()
       result = result.filter(c => c.name?.toLowerCase().includes(q))
@@ -374,7 +405,72 @@ function BulkSendModal({ templates, driver = MANUAL_DRIVER, onClose, initialCont
                 </div>
               ) : (
                 <>
-                  <p className="text-sm text-gray-600">סנן את הנמענים:</p>
+                  {/* Task targeting — the headline filter, so it sits above the rest */}
+                  <div className="border-2 border-green-200 bg-green-50/50 rounded-lg p-3 space-y-3">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 mb-1 block">
+                        📋 שלח לפי משימה
+                      </label>
+                      <select
+                        value={filters.taskKey}
+                        onChange={e => setFilters({ ...filters, taskKey: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 outline-none"
+                      >
+                        <option value="">— ללא סינון לפי משימה —</option>
+                        {taskColumns.map(col => (
+                          <option key={col.key} value={col.key}>
+                            {col.label} ({TASK_SOURCE_LABEL[col.taskSource] || col.taskSource})
+                          </option>
+                        ))}
+                      </select>
+                      {taskColumns.length === 0 && (
+                        <p className="text-xs text-gray-500 mt-1">אין עמודות משימה מוגדרות.</p>
+                      )}
+                    </div>
+
+                    {filters.taskKey && (
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { value: 'not_done', label: 'רק מי שלא סיים' },
+                          { value: 'done', label: 'רק מי שסיים' },
+                          { value: 'all', label: 'כולם' },
+                        ].map(opt => (
+                          <label
+                            key={opt.value}
+                            className={`px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors ${
+                              filters.taskStatus === opt.value
+                                ? 'bg-green-600 text-white border-green-600'
+                                : 'bg-white hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="taskStatus"
+                              className="sr-only"
+                              checked={filters.taskStatus === opt.value}
+                              onChange={() => setFilters({ ...filters, taskStatus: opt.value })}
+                            />
+                            {opt.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filters.myTeachersOnly}
+                        onChange={e => setFilters({ ...filters, myTeachersOnly: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      רק המורים שלי
+                      <span className="text-xs text-gray-500">
+                        (מומלץ — מונע פנייה למי שהמשימה מעולם לא הוקצתה לו)
+                      </span>
+                    </label>
+                  </div>
+
+                  <p className="text-sm text-gray-600">סינון נוסף:</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-gray-500 mb-1 block">חיפוש לפי שם</label>

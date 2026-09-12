@@ -4,8 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
-
-const MENTOR = 'אבנר'
+import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
@@ -20,26 +19,8 @@ const DEFAULT_COLUMNS = [
   { key: 'class_name', label: 'כיתה', source: 'core', visible: false, locked: false, width: 90 },
   { key: 'birthday', label: 'יום הולדת', source: 'core', visible: false, locked: false, width: 130 },
   { key: 'last_contact_journal', label: 'יומן קשר אחרון', source: 'journal', visible: true, locked: false, width: 220 },
-  // keys intentionally match the pre-existing custom_fields.challenge1/2/3 (from the old
-  // standalone Monday page) so existing data renders immediately with no migration.
-  { key: 'challenge1', label: 'אתגר 1', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
-  { key: 'challenge2', label: 'אתגר 2', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
-  { key: 'challenge3', label: 'אתגר 3', source: 'task', taskSource: 'monday', visible: true, locked: false, width: 90 },
+  ...DEFAULT_TASK_COLUMNS,
 ]
-
-// The pseudo-contact row representing "מנהל המערכת" (created by the voice-log
-// admin_task route) — pinned to the top of the table and excluded from teacher stats.
-function isAdminRow(contact) {
-  return contact.custom_fields?.is_admin_row === true
-}
-
-// Show only Avner's teachers: mentor_name must match, and role must be a teacher role.
-function isMyTeacher(contact) {
-  if (contact.custom_fields?.mentor_name !== MENTOR) return false
-  const { role } = contact
-  if (!role) return true // mentor set but role not synced yet — include
-  return role.includes('מורה')
-}
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -73,11 +54,6 @@ function getEditType(col) {
 // A task cell counts as "done" for any truthy, non-"לא הוגש" value — this keeps Monday's
 // existing 'הוגש' / 'לא הוגש' strings working as the done/not-done signal for Monday task
 // columns, while general task columns just store boolean true/false.
-function isTaskDone(contact, col) {
-  const value = contact.custom_fields?.[col.key]
-  return Boolean(value) && value !== 'לא הוגש'
-}
-
 // First sentence of a journal entry's free text, for the compact table view (full text is
 // still available via the cell's title tooltip).
 function firstSentence(text) {
@@ -991,7 +967,6 @@ function EditableCell({ contact, col, journalMap, lastNonJournalMap, isEditing, 
 }
 
 // ─── Per-teacher WhatsApp task composer ───────────────────────────
-const TASK_SOURCE_LABEL = { monday: 'Monday', general: 'כללי' }
 
 function TaskComposerModal({ teacher, taskColumns, templates, onClose }) {
   const openTasks = taskColumns.filter(col => !isTaskDone(teacher, col))

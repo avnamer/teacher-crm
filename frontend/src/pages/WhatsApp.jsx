@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { backendFetch } from '../lib/api.js'
+import SendQueueModal from '../components/SendQueueModal.jsx'
+import { messageForContact, phoneProblem, MANUAL_DRIVER, fetchDriver } from '../lib/whatsapp.js'
 
 export default function WhatsApp() {
   const [templates, setTemplates] = useState([])
   const [showEditor, setShowEditor] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [backendStatus, setBackendStatus] = useState('disconnected')
+  const [driver, setDriver] = useState(MANUAL_DRIVER)
   const [showBulkSend, setShowBulkSend] = useState(false)
 
   useEffect(() => {
     loadTemplates()
-    checkBackendStatus()
+    refreshDriver()
   }, [])
 
   async function loadTemplates() {
@@ -30,15 +32,8 @@ export default function WhatsApp() {
     }
   }
 
-  async function checkBackendStatus() {
-    try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-      const res = await fetch(`${backendUrl}/api/whatsapp/status`)
-      const data = await res.json()
-      setBackendStatus(data.status || 'disconnected')
-    } catch {
-      setBackendStatus('disconnected')
-    }
+  async function refreshDriver() {
+    setDriver(await fetchDriver())
   }
 
   async function deleteTemplate(id) {
@@ -60,31 +55,30 @@ export default function WhatsApp() {
         </button>
       </div>
 
-      {/* Connection status */}
+      {/* Sending mode */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full ${
-              backendStatus === 'connected' ? 'bg-green-500' :
-              backendStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-              'bg-red-500'
+              driver.capabilities.autoSend ? 'bg-green-500' : 'bg-blue-500'
             }`} />
             <span className="font-medium">
-              {backendStatus === 'connected' ? 'מחובר ל-WhatsApp' :
-               backendStatus === 'connecting' ? 'מתחבר...' :
-               'לא מחובר'}
+              {driver.capabilities.autoSend
+                ? 'שליחה אוטומטית (Cloud API)'
+                : 'שליחה דרך WhatsApp במחשב'}
             </span>
           </div>
           <button
-            onClick={checkBackendStatus}
+            onClick={refreshDriver}
             className="px-3 py-1 text-sm border rounded-lg hover:bg-gray-50"
           >
             רענן סטטוס
           </button>
         </div>
-        {backendStatus === 'disconnected' && (
+        {!driver.capabilities.autoSend && (
           <p className="text-sm text-gray-500 mt-2">
-            שרת ה-Backend לא פעיל. הפעל אותו כדי לשלוח הודעות WhatsApp.
+            כל הודעה תיפתח ב-WhatsApp עם הטקסט מוכן — נשאר רק ללחוץ Enter. לא נדרש שרת,
+            והשיטה בטוחה לחלוטין למספר שלך.
           </p>
         )}
       </div>
@@ -167,7 +161,7 @@ export default function WhatsApp() {
       {showBulkSend && (
         <BulkSendModal
           templates={templates}
-          backendStatus={backendStatus}
+          driver={driver}
           onClose={() => setShowBulkSend(false)}
         />
       )}
@@ -175,20 +169,9 @@ export default function WhatsApp() {
   )
 }
 
-function resolveMessage(body, contact) {
-  const firstName = contact.name?.split(' ')[0] || ''
-  return body
-    .replace(/\{\{name\}\}/g, firstName)
-    .replace(/\{\{school\}\}/g, contact.school || '')
-    .replace(/\{\{class_name\}\}/g, contact.class_name || '')
-    .replace(/\{\{hackathon_date\}\}/g, contact.hackathon_date
-      ? new Date(contact.hackathon_date).toLocaleDateString('he-IL') : '')
-    .replace(/\{\{phone\}\}/g, contact.phone || '')
-    .replace(/\{\{open_tasks\}\}/g, contact._open_tasks_text || '')
-}
-
-function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = null, presetContactOverride = null }) {
+function BulkSendModal({ templates, driver = MANUAL_DRIVER, onClose, initialContactIds = null, presetContactOverride = null }) {
   const [step, setStep] = useState(1)
+  const [showQueue, setShowQueue] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0] || null)
   const [filters, setFilters] = useState({ name: '', gender: 'all', school: '', dateFrom: '', dateTo: '' })
   const [allContacts, setAllContacts] = useState([])
@@ -293,7 +276,8 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
     }
   }
 
-  async function handleSendNow() {
+  /** Unattended send — only possible on a driver that can actually send by itself. */
+  async function handleAutoSend() {
     if (filteredContacts.length === 0) return
     setSaving(true)
     try {
@@ -314,6 +298,17 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
   }
 
   const previewContacts = filteredContacts.slice(0, 3)
+  const unreachable = filteredContacts.filter(c => phoneProblem(c))
+
+  if (showQueue) {
+    return (
+      <SendQueueModal
+        template={selectedTemplate}
+        contacts={filteredContacts}
+        onClose={onClose}
+      />
+    )
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -483,16 +478,23 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
                 <div>
                   <p className="text-sm text-gray-600 mb-2">תצוגה מקדימה (3 הודעות ראשונות):</p>
                   <div className="space-y-2">
-                    {previewContacts.map(c => {
-                      const body = c.gender === 'female' ? selectedTemplate.body_female : selectedTemplate.body_male
-                      return (
-                        <div key={c.id} className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
-                          <p className="text-xs text-gray-500 mb-1">→ {c.name} ({c.phone})</p>
-                          <p className="text-gray-800 whitespace-pre-wrap">{resolveMessage(body, c)}</p>
-                        </div>
-                      )
-                    })}
+                    {previewContacts.map(c => (
+                      <div key={c.id} className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+                        <p className="text-xs text-gray-500 mb-1">→ {c.name} ({c.phone})</p>
+                        <p className="text-gray-800 whitespace-pre-wrap">
+                          {messageForContact(selectedTemplate, c)}
+                        </p>
+                      </div>
+                    ))}
                   </div>
+                </div>
+              )}
+
+              {unreachable.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                  ⚠ {unreachable.length} אנשי קשר ללא מספר טלפון תקין — הם ידולגו:
+                  <span className="text-red-600"> {unreachable.slice(0, 5).map(c => c.name).join(', ')}</span>
+                  {unreachable.length > 5 && ` ועוד ${unreachable.length - 5}`}
                 </div>
               )}
             </div>
@@ -533,15 +535,13 @@ function BulkSendModal({ templates, backendStatus, onClose, initialContactIds = 
               >
                 {saving ? 'שומר...' : '💾 שמור בתור ממתין'}
               </button>
-              {backendStatus === 'connected' && (
-                <button
-                  onClick={handleSendNow}
-                  disabled={saving || filteredContacts.length === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-40"
-                >
-                  {saving ? 'שולח...' : '🚀 שלח עכשיו'}
-                </button>
-              )}
+              <button
+                onClick={() => (driver.capabilities.autoSend ? handleAutoSend() : setShowQueue(true))}
+                disabled={saving || filteredContacts.length === 0}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-40"
+              >
+                {saving ? 'שולח...' : driver.capabilities.autoSend ? '🚀 שלח עכשיו' : '💬 שלח ב-WhatsApp'}
+              </button>
             </div>
           )}
         </div>

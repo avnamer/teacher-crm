@@ -420,6 +420,14 @@ export default function Contacts() {
     return { taskSource, done, total }
   })
 
+  // Per-column completion count rendered in each task column's header ("done/total").
+  // Counted over "my teachers" like the aggregate stats above, so the number stays stable
+  // while searching or filtering the table instead of shifting with the visible rows.
+  const taskDoneCounts = {}
+  for (const col of taskColumns) {
+    taskDoneCounts[col.key] = myTeachers.filter(t => isTaskDone(t, col)).length
+  }
+
   if (loading || !columnsLoaded) {
     return <div className="flex items-center justify-center h-64 text-gray-500">טוען...</div>
   }
@@ -552,6 +560,14 @@ export default function Contacts() {
                         >
                           📲
                         </button>
+                      )}
+                      {col.source === 'task' && (
+                        <div
+                          className="text-xs font-normal text-gray-400"
+                          title={`${taskDoneCounts[col.key] ?? 0} מתוך ${myTeachers.length} מורים סימנו שבוצע`}
+                        >
+                          {taskDoneCounts[col.key] ?? 0}/{myTeachers.length}
+                        </div>
                       )}
                       <span
                         onMouseDown={e => startResize(col.key, e)}
@@ -688,7 +704,6 @@ export default function Contacts() {
         return (
           <BulkSendModal
             templates={templates}
-            backendStatus="disconnected"
             initialContactIds={notDone}
             onClose={() => setBulkReminderCol(null)}
           />
@@ -1005,7 +1020,6 @@ function TaskComposerModal({ teacher, taskColumns, templates, onClose }) {
     return (
       <BulkSendModal
         templates={templates}
-        backendStatus="disconnected"
         initialContactIds={[presetContact.id]}
         presetContactOverride={presetContact}
         onClose={onClose}

@@ -14,14 +14,7 @@ export const ROUTES = [
   { value: 'new_task_column', label: '📋 משימה לכל המורים' },
 ]
 
-// Mirrors INTERACTION_TYPES in ContactDetail.jsx — kept in sync manually since the two
-// pages don't share a module today.
-export const COMMUNICATION_TYPES = [
-  { value: 'phone_call', label: 'שיחת טלפון', icon: '📞' },
-  { value: 'message_sent', label: 'הודעה', icon: '😞' },
-  { value: 'correspondence', label: 'התכתבות', icon: '📜' },
-  { value: 'meeting', label: 'פגישה', icon: '🤝' },
-]
+export { INTERACTION_TYPES as COMMUNICATION_TYPES } from './interactions.js'
 
 export async function ensureAdminContact() {
   const { data: existing, error: findErr } = await supabase

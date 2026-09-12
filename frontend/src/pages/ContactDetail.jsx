@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
+import { INTERACTION_TYPES, interactionIcon, interactionLabel } from '../lib/interactions.js'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -249,7 +250,7 @@ export default function ContactDetail() {
               return (
                 <div key={i.id} className="rounded-lg bg-gray-50 overflow-hidden">
                   <div className="flex items-center gap-2 p-3">
-                    <span className="text-lg shrink-0">{typeIcon(i.type)}</span>
+                    <span className="text-lg shrink-0" title={interactionLabel(i)}>{interactionIcon(i)}</span>
                     <span className="text-sm font-medium text-gray-700 shrink-0 whitespace-nowrap">{title}</span>
                     {pendingCount > 0 && (
                       <span className="shrink-0 text-amber-500" title={`${pendingCount} משימות פתוחות`}>❗</span>
@@ -396,17 +397,8 @@ function InfoRow({ label, value, dir }) {
   )
 }
 
-const INTERACTION_TYPES = [
-  { value: 'phone_call', label: 'שיחת טלפון', icon: '📞' },
-  { value: 'message_sent', label: 'הודעה', icon: '😞' },
-  { value: 'correspondence', label: 'התכתבות', icon: '📜' },
-  { value: 'meeting', label: 'פגישה', icon: '🤝' },
-]
 
-function typeIcon(type) {
-  if (type === 'journal') return '📝'
-  return INTERACTION_TYPES.find(t => t.value === type)?.icon || '📋'
-}
+
 function typeLabel(type, metadata) {
   if (type === 'journal') return metadata?.column_label || 'רשומת יומן'
   return INTERACTION_TYPES.find(t => t.value === type)?.label || type

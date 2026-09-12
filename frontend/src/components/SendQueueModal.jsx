@@ -94,6 +94,10 @@ export default function SendQueueModal({ template, contacts, onClose }) {
         driver: 'manual',
         template_id: template?.id || null,
         template_name: template?.name || null,
+        // Marks this as sent through the send queue rather than logged by hand
+        // afterwards, which is what earns it the distinct icon in the history.
+        sent_via: 'bulk',
+        recipient_count: contacts.length,
       },
     })
     // A failed log doesn't un-send the message, so don't roll the row back —

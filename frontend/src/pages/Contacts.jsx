@@ -5,6 +5,7 @@ import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
+import { interactionIcon } from '../lib/interactions.js'
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
@@ -63,12 +64,6 @@ function firstSentence(text) {
   return match ? match[0].trim() : trimmed
 }
 
-// Icon for a non-journal interaction type, used when it's more recent than any manual
-// journal entry — mirrors the icons in ContactDetail.jsx's typeIcon().
-function interactionTypeIcon(type) {
-  return { phone_call: '📞', message_sent: '😞', correspondence: '📜', meeting: '🤝' }[type] || '📋'
-}
-
 function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
   if (col.source === 'task') return isTaskDone(contact, col) ? '✓' : ''
   if (col.source === 'journal') {
@@ -82,7 +77,7 @@ function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
     if (!source) return '-'
     const days = daysSince(source.created_at)
     const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
-    const prefix = useLatestOther ? `${interactionTypeIcon(latestOther.type)} ` : ''
+    const prefix = useLatestOther ? `${interactionIcon(latestOther)} ` : ''
     return `${prefix}(${daysStr}) ${firstSentence(source.content)}`
   }
   const value = getCellValue(contact, col)
@@ -202,7 +197,7 @@ export default function Contacts() {
     try {
       const { data, error } = await supabase
         .from('interactions')
-        .select('contact_id, created_at, type, content')
+        .select('contact_id, created_at, type, content, metadata')
         .in('contact_id', contactIds)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -211,7 +206,9 @@ export default function Contacts() {
       for (const row of data || []) {
         if (!map[row.contact_id]) map[row.contact_id] = row.created_at
         if (row.type !== 'journal' && !nonJournalMap[row.contact_id]) {
-          nonJournalMap[row.contact_id] = { content: row.content, type: row.type, created_at: row.created_at }
+          nonJournalMap[row.contact_id] = {
+            content: row.content, type: row.type, created_at: row.created_at, metadata: row.metadata,
+          }
         }
       }
       setLastContactMap(map)

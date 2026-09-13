@@ -1,11 +1,20 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+
 export default function AddMeetingModal({ teachers, onClose, onSaved }) {
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(todayStr)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // String comparison works here because both sides are 'YYYY-MM-DD'.
+  const isFuture = date > todayStr()
+  const selectedTeachers = teachers.filter(t => selectedIds.has(t.id))
+  const schools = [...new Set(selectedTeachers.map(t => t.school).filter(Boolean))]
 
   function toggleTeacher(id) {
     setSelectedIds(prev => {
@@ -26,7 +35,7 @@ export default function AddMeetingModal({ teachers, onClose, onSaved }) {
       alert('יש לבחור לפחות מורה אחד')
       return
     }
-    if (!content.trim()) {
+    if (!isFuture && !content.trim()) {
       alert('יש למלא את תוכן הפגישה')
       return
     }
@@ -34,12 +43,20 @@ export default function AddMeetingModal({ teachers, onClose, onSaved }) {
     try {
       const selected = teachers.filter(t => selectedIds.has(t.id))
       const createdAt = new Date(`${date}T12:00:00`).toISOString()
+      // Ties multi-attendee rows back to one real-world meeting. created_at alone
+      // can't do this reliably — two unrelated meetings scheduled for the same day
+      // would collide, since the time portion is always fixed at noon.
+      const meetingGroupId = crypto.randomUUID()
       const rows = selected.map(t => ({
         contact_id: t.id,
         type: 'meeting',
-        content: content.trim(),
+        content: content.trim() || null,
         created_at: createdAt,
-        metadata: { attendees: selected.filter(o => o.id !== t.id).map(o => o.name) },
+        metadata: {
+          attendees: selected.filter(o => o.id !== t.id).map(o => o.name),
+          meeting_group_id: meetingGroupId,
+          ...(isFuture ? { meeting_status: 'scheduled' } : {}),
+        },
       }))
       const { error } = await supabase.from('interactions').insert(rows)
       if (error) throw error
@@ -65,6 +82,11 @@ export default function AddMeetingModal({ teachers, onClose, onSaved }) {
               onChange={e => setDate(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             />
+            {isFuture && (
+              <p className="text-xs text-purple-600 mt-1">
+                פגישה עתידית — ניתן להשלים את התוכן אחרי שהיא מתקיימת
+              </p>
+            )}
           </div>
 
           <div>
@@ -92,16 +114,23 @@ export default function AddMeetingModal({ teachers, onClose, onSaved }) {
               )}
             </div>
             <p className="text-xs text-gray-400 mt-1">{selectedIds.size} נבחרו</p>
+            {schools.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1">
+                {schools.length === 1 ? `בית ספר: ${schools[0]}` : `בתי ספר: ${schools.join(', ')}`}
+              </p>
+            )}
           </div>
 
           <div>
-            <label className="text-sm text-gray-500 mb-1 block">תוכן הפגישה *</label>
+            <label className="text-sm text-gray-500 mb-1 block">
+              תוכן הפגישה{isFuture ? '' : ' *'}
+            </label>
             <textarea
-              required
+              required={!isFuture}
               rows={4}
               value={content}
               onChange={e => setContent(e.target.value)}
-              placeholder="על מה דיברתם בפגישה?"
+              placeholder={isFuture ? 'ניתן להשאיר ריק ולהשלים אחרי הפגישה' : 'על מה דיברתם בפגישה?'}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
             />
           </div>

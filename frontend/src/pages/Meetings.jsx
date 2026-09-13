@@ -8,6 +8,14 @@ function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
 }
 
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+
+function dateInputValue(iso) {
+  return new Date(iso).toISOString().split('T')[0]
+}
+
 // 🟢 ≤1 month, 🟠 1–3 months, 🔴 >3 months or never met — a school-scale version of
 // the dashboard's per-teacher contactBucket(), with month-scale thresholds appropriate
 // for meetings rather than day-to-day contact.
@@ -32,6 +40,67 @@ function groupCompletedBySchool(rows, contactsById) {
   }
   // Most-overdue school first — same convention this page already used for teachers.
   return Object.values(bySchool).sort((a, b) => daysSince(b.lastAt) - daysSince(a.lastAt))
+}
+
+// Content used to pre-fill an edit form for a meeting we only have as a group (the
+// upcoming-meetings list, which doesn't carry per-row content) — every row in a
+// group is expected to hold the same content, so the first one found is enough.
+function firstRowContent(rowIds, meetings) {
+  return meetings.find(m => rowIds.includes(m.id))?.content || ''
+}
+
+// ─── Inline edit form shared by both the past-meetings and upcoming-meetings lists ──
+function MeetingEditForm({ initialDate, initialContent, onSave, onCancel }) {
+  const [date, setDate] = useState(initialDate)
+  const [content, setContent] = useState(initialContent)
+  const [saving, setSaving] = useState(false)
+  const isFuture = date > todayStr()
+
+  async function handleSave() {
+    if (!isFuture && !content.trim()) {
+      alert('יש למלא את תוכן הפגישה')
+      return
+    }
+    setSaving(true)
+    try {
+      await onSave({ date, content, isFuture })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <input
+        type="date"
+        value={date}
+        onChange={e => setDate(e.target.value)}
+        className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
+      />
+      {isFuture && (
+        <p className="text-xs text-purple-600">
+          תאריך עתידי — הפגישה תסומן כמתוכננת
+        </p>
+      )}
+      <textarea
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        rows={2}
+        placeholder={isFuture ? 'ניתן להשאיר ריק ולהשלים אחרי הפגישה' : 'על מה דיברתם בפגישה?'}
+        className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
+      />
+      <div className="flex gap-2">
+        <button onClick={handleSave} disabled={saving}
+          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
+          {saving ? 'שומר...' : 'שמור'}
+        </button>
+        <button onClick={onCancel} disabled={saving}
+          className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
+          ביטול
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // ─── School-recency stats (mirrors Contacts.jsx's ContactStats, bucketed by school) ──
@@ -87,6 +156,7 @@ export default function Meetings() {
   const [showAddMeetingModal, setShowAddMeetingModal] = useState(false)
   const [expandedBucket, setExpandedBucket] = useState(null)
   const [openSchool, setOpenSchool] = useState(null)
+  const [editingGroupId, setEditingGroupId] = useState(null)
 
   useEffect(() => {
     loadAll()
@@ -122,6 +192,30 @@ export default function Meetings() {
     }
   }
 
+  // Updates every row belonging to one real-world meeting at once (content, date,
+  // and — derived from the new date — whether it's scheduled or completed), then
+  // reloads so the recency banner / upcoming list / past list all stay consistent
+  // even when an edit moves a meeting between those sections.
+  async function saveMeetingEdit(rowIds, { date, content, isFuture }) {
+    const createdAt = new Date(`${date}T12:00:00`).toISOString()
+    try {
+      for (const rowId of rowIds) {
+        const row = meetings.find(m => m.id === rowId)
+        const { meeting_status, ...rest } = row?.metadata || {}
+        const metadata = isFuture ? { ...rest, meeting_status: 'scheduled' } : rest
+        const { error } = await supabase
+          .from('interactions')
+          .update({ content: content.trim() || null, created_at: createdAt, metadata })
+          .eq('id', rowId)
+        if (error) throw error
+      }
+      setEditingGroupId(null)
+      await loadAll()
+    } catch (err) {
+      alert('שגיאה בעדכון הפגישה: ' + err.message)
+    }
+  }
+
   const contactsById = Object.fromEntries(contacts.map(c => [c.id, c]))
   const completed = meetings.filter(isCompletedMeeting)
   const now = new Date()
@@ -129,6 +223,12 @@ export default function Meetings() {
     meetings.filter(row => isScheduledMeeting(row) && new Date(row.created_at) > now),
     contactsById
   ).sort((a, b) => new Date(a.date) - new Date(b.date))
+
+  // Every meeting (any status), grouped by meeting_group_id — used only to resolve
+  // "which row ids belong to this meeting" when an edit is opened, regardless of
+  // which section (past or upcoming) it was opened from.
+  const allGroups = groupMeetingsByGroupId(meetings, contactsById)
+  const groupById = Object.fromEntries(allGroups.map(g => [g.groupId, g]))
 
   const bySchool = groupCompletedBySchool(completed, contactsById)
   const lastAtBySchool = Object.fromEntries(bySchool.map(g => [g.school, g.lastAt]))
@@ -164,16 +264,33 @@ export default function Meetings() {
             <div className="space-y-2">
               <h2 className="text-lg font-semibold text-gray-800">פגישות עתידיות</h2>
               {upcoming.map(g => (
-                <div key={g.groupId} className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <span className="font-medium text-gray-800">{g.contactNames.join(', ')}</span>
-                    {g.schools.length > 0 && (
-                      <span className="text-xs text-gray-500 mr-2">{g.schools.join(', ')}</span>
-                    )}
-                  </div>
-                  <span className="text-sm text-purple-700">
-                    {new Date(g.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                  </span>
+                <div key={g.groupId} className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
+                  {editingGroupId === g.groupId ? (
+                    <MeetingEditForm
+                      initialDate={dateInputValue(g.date)}
+                      initialContent={firstRowContent(g.rowIds, meetings)}
+                      onSave={vals => saveMeetingEdit(g.rowIds, vals)}
+                      onCancel={() => setEditingGroupId(null)}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-medium text-gray-800">{g.contactNames.join(', ')}</span>
+                        {g.schools.length > 0 && (
+                          <span className="text-xs text-gray-500 mr-2">{g.schools.join(', ')}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-purple-700">
+                          {new Date(g.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                        </span>
+                        <button onClick={() => setEditingGroupId(g.groupId)}
+                          className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">
+                          ✏️
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -222,17 +339,38 @@ export default function Meetings() {
 
                     {isOpen && (
                       <div className="border-t border-gray-200 divide-y divide-gray-100">
-                        {sortedRows.map(row => (
-                          <div key={row.id} className="px-4 py-3 bg-white">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-blue-600">{row.teacherName}</span>
-                              <span className="text-xs text-gray-400">
-                                {new Date(row.created_at).toLocaleDateString('he-IL')}
-                              </span>
+                        {sortedRows.map(row => {
+                          const groupId = row.metadata?.meeting_group_id || row.id
+                          const rowIds = groupById[groupId]?.rowIds || [row.id]
+                          return (
+                            <div key={row.id} className="px-4 py-3 bg-white">
+                              {editingGroupId === groupId ? (
+                                <MeetingEditForm
+                                  initialDate={dateInputValue(row.created_at)}
+                                  initialContent={row.content || ''}
+                                  onSave={vals => saveMeetingEdit(rowIds, vals)}
+                                  onCancel={() => setEditingGroupId(null)}
+                                />
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium text-blue-600">{row.teacherName}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-400">
+                                        {new Date(row.created_at).toLocaleDateString('he-IL')}
+                                      </span>
+                                      <button onClick={() => setEditingGroupId(groupId)}
+                                        className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">
+                                        ✏️
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {row.content && <p className="text-sm text-gray-600 mt-1">{row.content}</p>}
+                                </>
+                              )}
                             </div>
-                            {row.content && <p className="text-sm text-gray-600 mt-1">{row.content}</p>}
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>

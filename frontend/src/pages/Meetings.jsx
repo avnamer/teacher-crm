@@ -72,9 +72,14 @@ function MeetingEditForm({ initialDate, initialContent, onSave, onCancel, onDele
     }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!confirm('למחוק את הפגישה לצמיתות? הפעולה תמחק את הרשומה עבור כל המשתתפים.')) return
-    onDelete()
+    setSaving(true)
+    try {
+      await onDelete()
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (

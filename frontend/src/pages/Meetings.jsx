@@ -53,7 +53,7 @@ function firstRowContent(rowIds, meetings) {
 }
 
 // ─── Inline edit form shared by both the past-meetings and upcoming-meetings lists ──
-function MeetingEditForm({ initialDate, initialContent, onSave, onCancel }) {
+function MeetingEditForm({ initialDate, initialContent, onSave, onCancel, onDelete }) {
   const [date, setDate] = useState(initialDate)
   const [content, setContent] = useState(initialContent)
   const [saving, setSaving] = useState(false)
@@ -70,6 +70,11 @@ function MeetingEditForm({ initialDate, initialContent, onSave, onCancel }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleDelete() {
+    if (!confirm('למחוק את הפגישה לצמיתות? הפעולה תמחק את הרשומה עבור כל המשתתפים.')) return
+    onDelete()
   }
 
   return (
@@ -100,6 +105,10 @@ function MeetingEditForm({ initialDate, initialContent, onSave, onCancel }) {
         <button onClick={onCancel} disabled={saving}
           className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
           ביטול
+        </button>
+        <button onClick={handleDelete} disabled={saving}
+          className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 disabled:opacity-50 mr-auto">
+          מחק פגישה
         </button>
       </div>
     </div>
@@ -223,6 +232,19 @@ export default function Meetings() {
     }
   }
 
+  // Deletes every row belonging to one real-world meeting at once (all attendees),
+  // mirroring saveMeetingEdit's own success path.
+  async function deleteMeetingGroup(rowIds) {
+    try {
+      const { error } = await supabase.from('interactions').delete().in('id', rowIds)
+      if (error) throw error
+      setEditingGroupId(null)
+      await loadAll()
+    } catch (err) {
+      alert('שגיאה במחיקת הפגישה: ' + err.message)
+    }
+  }
+
   const contactsById = Object.fromEntries(contacts.map(c => [c.id, c]))
   const completed = meetings.filter(isCompletedMeeting)
   const now = new Date()
@@ -278,6 +300,7 @@ export default function Meetings() {
                       initialContent={firstRowContent(g.rowIds, meetings)}
                       onSave={vals => saveMeetingEdit(g.rowIds, vals)}
                       onCancel={() => setEditingGroupId(null)}
+                      onDelete={() => deleteMeetingGroup(g.rowIds)}
                     />
                   ) : (
                     <div className="flex items-center justify-between">
@@ -357,6 +380,7 @@ export default function Meetings() {
                                   initialContent={row.content || ''}
                                   onSave={vals => saveMeetingEdit(rowIds, vals)}
                                   onCancel={() => setEditingGroupId(null)}
+                                  onDelete={() => deleteMeetingGroup(rowIds)}
                                 />
                               ) : (
                                 <>

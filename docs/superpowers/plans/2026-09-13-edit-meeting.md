@@ -1,3 +1,33 @@
+# Edit Meeting Date/Content Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Let the mentor edit a meeting's date and content directly from the Meetings page, for both past and upcoming meetings, updating every attendee's row at once.
+
+**Architecture:** A single shared inline-edit component (`MeetingEditForm`) is added to `frontend/src/pages/Meetings.jsx` and wired into both the past-meetings-by-school list and the upcoming-meetings list. Saving resolves the full set of `interactions` row ids belonging to the edited meeting (via the existing `groupMeetingsByGroupId` helper) and updates `content`/`created_at`/`metadata.meeting_status` on every one of them, then reloads the page.
+
+**Tech Stack:** React (Vite), Supabase JS client, Tailwind classes — matches the rest of the frontend. No automated test framework exists in this repo (confirmed in the prior meetings-page-redesign plan); manual browser + database verification is the actual "test" here.
+
+**Reference spec:** `docs/superpowers/specs/2026-09-13-edit-meeting-design.md`
+
+---
+
+## Before you start
+
+Run the app locally with the `run-teacher-crm` skill and keep it running for the verification step below. You're working in a dedicated git worktree on branch `feature/edit-meeting` (already created off `main`, which already includes the full meetings-page redesign this plan builds on). Stage specific files only when committing — never `git add -A`.
+
+---
+
+### Task 1: Add inline date/content editing to the Meetings page
+
+**Files:**
+- Modify (full rewrite): `frontend/src/pages/Meetings.jsx`
+
+- [ ] **Step 1: Replace the entire file**
+
+Replace the full contents of `frontend/src/pages/Meetings.jsx` with:
+
+```jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
@@ -9,10 +39,7 @@ function daysSince(dateStr) {
 }
 
 function todayStr() {
-  const d = new Date()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${month}-${day}`
+  return new Date().toISOString().split('T')[0]
 }
 
 function dateInputValue(iso) {
@@ -202,18 +229,14 @@ export default function Meetings() {
   async function saveMeetingEdit(rowIds, { date, content, isFuture }) {
     const createdAt = new Date(`${date}T12:00:00`).toISOString()
     try {
-      const { data: rows, error: fetchErr } = await supabase
-        .from('interactions')
-        .select('id, metadata')
-        .in('id', rowIds)
-      if (fetchErr) throw fetchErr
-      for (const row of rows) {
-        const { meeting_status, ...rest } = row.metadata || {}
+      for (const rowId of rowIds) {
+        const row = meetings.find(m => m.id === rowId)
+        const { meeting_status, ...rest } = row?.metadata || {}
         const metadata = isFuture ? { ...rest, meeting_status: 'scheduled' } : rest
         const { error } = await supabase
           .from('interactions')
           .update({ content: content.trim() || null, created_at: createdAt, metadata })
-          .eq('id', row.id)
+          .eq('id', rowId)
         if (error) throw error
       }
       setEditingGroupId(null)
@@ -398,3 +421,64 @@ export default function Meetings() {
     </div>
   )
 }
+```
+
+- [ ] **Step 2: Manually verify editing a past (completed) meeting, date stays in the past**
+
+1. Open `http://localhost:5173/meetings`. Find a school with at least one completed meeting, expand it.
+2. Click the ✏️ next to any meeting row. Confirm it turns into a date input (pre-filled with the meeting's actual date) and a content textarea (pre-filled with the meeting's actual content), with שמור/ביטול buttons.
+3. Change the content to "בדיקת עריכה — תוכן חדש", keep the date unchanged, click "שמור".
+4. Confirm the page reloads that data and the row now shows the new content, same date, still in the same school section (still counts toward "completed" — check the school's bucket color/day-count didn't regress incorrectly).
+5. Query the database directly (via `backend/.env`'s service key against the Supabase REST API) to confirm: `content` is the new text, `created_at` unchanged, and `metadata` has no `meeting_status` key.
+
+- [ ] **Step 3: Manually verify editing a past meeting's date into the future re-schedules it**
+
+1. Edit the same meeting from Step 2 again. This time change the date to 10 days from today, leave content as-is, click "שמור".
+2. Confirm the meeting disappears from the school's past-meetings list (its count should drop by one, or the school itself may move buckets/disappear from that list if it had no other completed meetings) and instead appears in a new "פגישות עתידיות" section above, with the correct date spelled out in Hebrew.
+3. Query the database: confirm `created_at` is now 10 days out, `content` is unchanged, and `metadata.meeting_status` is now `"scheduled"`.
+
+- [ ] **Step 4: Manually verify editing an upcoming (scheduled) meeting**
+
+1. In the "פגישות עתידיות" section (should now include the meeting from Step 3), click its ✏️. Confirm the inline form appears pre-filled with its current date and content (content may be whatever you left it as — if it was never set, confirm the textarea is empty and the purple "תאריך עתידי" hint appears since the date is still in the future).
+2. Change the date to yesterday, and type "פגישה בדיקה שהתקיימה" as content (required now since the date is no longer future), click "שמור".
+3. Confirm the entry disappears from "פגישות עתידיות" and now appears in the correct school's past-meetings list instead, with the new content and date.
+4. Query the database: confirm `created_at` is now yesterday's date, `content` matches what you typed, and `metadata` no longer has a `meeting_status` key.
+
+- [ ] **Step 5: Manually verify group-wide editing for a multi-attendee meeting**
+
+1. Create a new meeting via "🤝 הוסף פגישה" with **two** attendees (any two teachers, today's date, some real content).
+2. On the Meetings page, find that school's section (or one of the two schools if the attendees are at different schools — either works), expand it, and confirm you see two separate rows (one per attendee) both showing this new meeting.
+3. Click ✏️ on **one** of those two rows. Change the content to "עדכון קבוצתי — בדיקה" and change the date to 3 days ago, click "שמור".
+4. Confirm **both** rows for this meeting now show the updated content and the updated date — not just the one you clicked into. If the two attendees are at different schools, check both schools' sections; if they're at the same school, confirm both rows in that one section updated.
+5. Query the database to directly confirm both underlying `interactions` rows (same `meeting_group_id`) now have identical `content` and `created_at`.
+6. Clean up: delete this test meeting's rows from the database (or leave them if you'd rather keep real test data around — your call, just note in your report which you did).
+
+- [ ] **Step 6: Clean up remaining test data**
+
+Delete or revert any other test rows created in Steps 2–4 that don't represent real meetings you want to keep, following the same query-before-delete discipline used in prior verification work on this project.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add frontend/src/pages/Meetings.jsx
+git commit -m "$(cat <<'EOF'
+Add inline date/content editing to the Meetings page
+
+A ✏️ control on each past-meeting row and each upcoming-meeting
+entry opens an inline form (date + content) reused across both
+sections. Saving updates every interactions row sharing the edited
+meeting's meeting_group_id at once, and re-derives whether the
+meeting is scheduled or completed from the new date — moving it
+between the upcoming and past sections as needed, exactly like
+AddMeetingModal's own create-time logic.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## After this plan
+
+Push `feature/edit-meeting` and open a PR against `main`, per this repo's own `CLAUDE.md` conventions (merging is the user's own action — Claude Code's safety classifier blocks agents from merging PRs directly).

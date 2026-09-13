@@ -7,7 +7,7 @@ import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
 import { interactionIcon } from '../lib/interactions.js'
-import { groupMeetingsByGroupId } from '../lib/meetings.js'
+import { groupMeetingsByGroupId, isScheduledMeeting } from '../lib/meetings.js'
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
@@ -187,7 +187,8 @@ export default function Contacts() {
       if (error) throw error
       setContacts(data || [])
       const ids = (data || []).map(c => c.id)
-      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids), loadScheduledMeetings(ids)])
+      const myTeacherIds = (data || []).filter(isMyTeacher).map(c => c.id)
+      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids), loadScheduledMeetings(myTeacherIds)])
     } catch (err) {
       console.error('Error loading contacts:', err)
     } finally {
@@ -256,7 +257,7 @@ export default function Contacts() {
       if (error) throw error
       const now = new Date()
       const overdue = (data || []).filter(row =>
-        row.metadata?.meeting_status === 'scheduled' && new Date(row.created_at) <= now
+        isScheduledMeeting(row) && new Date(row.created_at) <= now
       )
       setScheduledMeetings(overdue)
     } catch (err) {

@@ -7,6 +7,7 @@ import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
 import { interactionIcon } from '../lib/interactions.js'
+import { groupMeetingsByGroupId } from '../lib/meetings.js'
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
@@ -117,6 +118,8 @@ export default function Contacts() {
   const [pendingTasksExpanded, setPendingTasksExpanded] = useState(false)
   const [pendingVoiceLogs, setPendingVoiceLogs] = useState([])
   const [pendingVoiceLogsExpanded, setPendingVoiceLogsExpanded] = useState(false)
+  const [scheduledMeetings, setScheduledMeetings] = useState([]) // overdue interactions/meeting rows still marked 'scheduled'
+  const [scheduledMeetingsExpanded, setScheduledMeetingsExpanded] = useState(false)
 
   useEffect(() => {
     loadContacts()
@@ -184,7 +187,7 @@ export default function Contacts() {
       if (error) throw error
       setContacts(data || [])
       const ids = (data || []).map(c => c.id)
-      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids)])
+      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids), loadScheduledMeetings(ids)])
     } catch (err) {
       console.error('Error loading contacts:', err)
     } finally {
@@ -238,6 +241,26 @@ export default function Contacts() {
       setPendingTasksMap(map)
     } catch (err) {
       console.error('Error loading pending tasks:', err)
+    }
+  }
+
+  // Scheduled meetings whose date has passed — the mentor needs to confirm what happened.
+  async function loadScheduledMeetings(contactIds) {
+    if (contactIds.length === 0) return
+    try {
+      const { data, error } = await supabase
+        .from('interactions')
+        .select('id, contact_id, content, metadata, created_at')
+        .eq('type', 'meeting')
+        .in('contact_id', contactIds)
+      if (error) throw error
+      const now = new Date()
+      const overdue = (data || []).filter(row =>
+        row.metadata?.meeting_status === 'scheduled' && new Date(row.created_at) <= now
+      )
+      setScheduledMeetings(overdue)
+    } catch (err) {
+      console.error('Error loading scheduled meetings:', err)
     }
   }
 
@@ -428,6 +451,16 @@ export default function Contacts() {
         contacts={contacts}
         expanded={pendingTasksExpanded}
         onToggle={() => setPendingTasksExpanded(!pendingTasksExpanded)}
+      />
+
+      <ScheduledMeetingsBanner
+        rows={scheduledMeetings}
+        contacts={contacts}
+        expanded={scheduledMeetingsExpanded}
+        onToggle={() => setScheduledMeetingsExpanded(v => !v)}
+        onResolved={groupId => setScheduledMeetings(prev =>
+          prev.filter(r => (r.metadata?.meeting_group_id || r.id) !== groupId)
+        )}
       />
 
       <TaskStats stats={taskStats} />
@@ -836,6 +869,146 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
               </li>
             )
           })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ─── Meetings needing an update (scheduled meetings whose date has passed) ──
+function ScheduledMeetingRow({ group, onResolved }) {
+  const [editing, setEditing] = useState(false)
+  const [content, setContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function markHeld() {
+    if (!content.trim()) {
+      alert('יש למלא מה קרה בפגישה')
+      return
+    }
+    setSaving(true)
+    try {
+      const { data: rows, error: fetchErr } = await supabase
+        .from('interactions')
+        .select('id, metadata')
+        .in('id', group.rowIds)
+      if (fetchErr) throw fetchErr
+      for (const row of rows) {
+        const { meeting_status, ...rest } = row.metadata || {}
+        const { error } = await supabase
+          .from('interactions')
+          .update({ content: content.trim(), metadata: rest })
+          .eq('id', row.id)
+        if (error) throw error
+      }
+      onResolved(group.groupId)
+    } catch (err) {
+      alert('שגיאה בעדכון הפגישה: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function markNotHeld() {
+    setSaving(true)
+    try {
+      const { data: rows, error: fetchErr } = await supabase
+        .from('interactions')
+        .select('id, metadata')
+        .in('id', group.rowIds)
+      if (fetchErr) throw fetchErr
+      for (const row of rows) {
+        const { error } = await supabase
+          .from('interactions')
+          .update({ metadata: { ...row.metadata, meeting_status: 'not_held' } })
+          .eq('id', row.id)
+        if (error) throw error
+      }
+      onResolved(group.groupId)
+    } catch (err) {
+      alert('שגיאה בעדכון הפגישה: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <li className="text-sm">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <span className="font-medium text-amber-800">{group.contactNames.join(', ')}</span>
+          {group.schools.length > 0 && (
+            <span className="text-xs text-amber-600 mr-2">{group.schools.join(', ')}</span>
+          )}
+          <span className="text-xs text-amber-600 mr-2">
+            {new Date(group.date).toLocaleDateString('he-IL')}
+          </span>
+        </div>
+        {!editing && (
+          <div className="flex gap-2">
+            <button onClick={() => setEditing(true)} disabled={saving}
+              className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200 disabled:opacity-50">
+              עדכן שהתקיימה
+            </button>
+            <button onClick={markNotHeld} disabled={saving}
+              className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 disabled:opacity-50">
+              לא התקיימה
+            </button>
+          </div>
+        )}
+      </div>
+      {editing && (
+        <div className="mt-2 space-y-2">
+          <textarea
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            rows={2}
+            placeholder="מה קרה בפגישה?"
+            className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-amber-400"
+          />
+          <div className="flex gap-2">
+            <button onClick={markHeld} disabled={saving}
+              className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'שומר...' : 'שמור'}
+            </button>
+            <button onClick={() => setEditing(false)} disabled={saving}
+              className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolved }) {
+  const contactsById = Object.fromEntries(contacts.map(c => [c.id, c]))
+  const groups = groupMeetingsByGroupId(rows, contactsById)
+  if (groups.length === 0) return null
+
+  return (
+    <div className="rounded-xl border p-4 bg-amber-50 border-amber-200">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">❗</span>
+          <span className="text-sm font-medium text-amber-800">
+            יש לעדכן {groups.length} פגישות שהתקיימו
+          </span>
+        </div>
+        <button
+          onClick={onToggle}
+          className="text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          {expanded ? '▲ הסתר פירוט' : '▼ הצג פירוט'}
+        </button>
+      </div>
+
+      {expanded && (
+        <ul className="mt-3 space-y-3">
+          {groups.map(g => (
+            <ScheduledMeetingRow key={g.groupId} group={g} onResolved={onResolved} />
+          ))}
         </ul>
       )}
     </div>

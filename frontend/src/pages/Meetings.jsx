@@ -9,7 +9,10 @@ function daysSince(dateStr) {
 }
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
 }
 
 function dateInputValue(iso) {
@@ -199,14 +202,18 @@ export default function Meetings() {
   async function saveMeetingEdit(rowIds, { date, content, isFuture }) {
     const createdAt = new Date(`${date}T12:00:00`).toISOString()
     try {
-      for (const rowId of rowIds) {
-        const row = meetings.find(m => m.id === rowId)
-        const { meeting_status, ...rest } = row?.metadata || {}
+      const { data: rows, error: fetchErr } = await supabase
+        .from('interactions')
+        .select('id, metadata')
+        .in('id', rowIds)
+      if (fetchErr) throw fetchErr
+      for (const row of rows) {
+        const { meeting_status, ...rest } = row.metadata || {}
         const metadata = isFuture ? { ...rest, meeting_status: 'scheduled' } : rest
         const { error } = await supabase
           .from('interactions')
           .update({ content: content.trim() || null, created_at: createdAt, metadata })
-          .eq('id', rowId)
+          .eq('id', row.id)
         if (error) throw error
       }
       setEditingGroupId(null)

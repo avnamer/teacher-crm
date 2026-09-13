@@ -39,6 +39,26 @@ exactly like today's `AddMeetingModal` insert — `metadata.attendees` keeps
 listing the other teachers in the same meeting, so a school-wide session
 logs identically whether scheduled ahead or recorded after the fact.
 
+**Invariant — every attendee gets their own record.** Because
+`AddMeetingModal` inserts one row per selected teacher (today's behavior,
+unchanged), a meeting with several teachers automatically shows up in each
+of their individual interaction histories on their own contact page — not
+just in the aggregated views this spec adds. Nothing extra is needed for
+this; it falls out of the existing insert shape.
+
+**Invariant — any `type='meeting'` row surfaces on the Meetings page,
+regardless of how it was created.** The page's past-meetings query is
+simply "`interactions` where `type='meeting'` and `meeting_status` absent" —
+it does not care whether the row came from `AddMeetingModal` or from
+reclassifying an existing interaction to `meeting` via the type dropdown on
+the contact detail page (built in a previous session). Reclassifying an
+interaction to `meeting` there requires no separate sync step to make it
+appear here; it already has no `meeting_status` key, so it's treated as a
+completed meeting exactly like one logged through the modal. The only gap:
+a reclassified single interaction has no `meeting_group_id`, so it won't be
+part of a multi-attendee group elsewhere — it stands alone, which is correct
+since it wasn't created as part of a group meeting.
+
 **New:** every insert from `AddMeetingModal` (scheduled or not) also stamps
 a client-generated `metadata.meeting_group_id` (random UUID), shared by all
 rows created in that one submission. `created_at` alone can't reliably tie

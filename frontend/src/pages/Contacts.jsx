@@ -446,12 +446,6 @@ export default function Contacts() {
           >
             🔄 עמודות Monday
           </button>
-          <Link
-            to="/import"
-            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
-          >
-            📁 ייבוא CSV
-          </Link>
           <button
             onClick={() => setShowAddMeetingModal(true)}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
@@ -506,7 +500,7 @@ export default function Contacts() {
           {contacts.length === 0 ? (
             <>
               אין אנשי קשר.{' '}
-              <Link to="/import" className="text-blue-600 hover:underline">ייבא קובץ CSV</Link>
+              <Link to="/settings" className="text-blue-600 hover:underline">ייבא קובץ CSV מההגדרות</Link>
             </>
           ) : (
             'לא נמצאו תוצאות'

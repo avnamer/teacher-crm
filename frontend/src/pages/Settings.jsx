@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+import ImportCSVModal from '../components/ImportCSVModal.jsx'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
@@ -8,6 +9,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -185,6 +187,15 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Import contacts */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">ייבוא אנשי קשר</h2>
+        <button onClick={() => setShowImportModal(true)}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors">
+          📁 ייבוא קובץ CSV
+        </button>
+      </div>
+
       {/* Save button */}
       <div className="flex items-center gap-3">
         <button onClick={saveSettings} disabled={saving}
@@ -193,6 +204,10 @@ export default function Settings() {
         </button>
         {saved && <span className="text-green-600 text-sm">נשמר בהצלחה!</span>}
       </div>
+
+      {showImportModal && (
+        <ImportCSVModal onClose={() => setShowImportModal(false)} />
+      )}
     </div>
   )
 }

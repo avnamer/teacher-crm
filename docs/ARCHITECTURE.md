@@ -73,7 +73,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 | Table | Holds |
 |---|---|
 | `contacts` | Teachers (plus an admin pseudo-row, `custom_fields.is_admin_row`). `custom_fields` JSONB holds Monday data, task checkbox values, `mentor_name`, `_manual_edit` |
-| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` (meetings), `sent_via` / `recipient_count` (bulk WhatsApp) |
+| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` (meetings), `sent_via` / `recipient_count` (bulk WhatsApp), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
 | `pending_voice_logs` | Unapproved voice-log analyses, scoped by `mentor_name` |
 | `settings` | Single row, **frontend-readable**: Monday board, working hours, `contacts_columns` (column config JSONB). Never store secrets here |
 | `app_private` | Secrets reachable only by the backend service key (RLS on, no policy): `google_calendar_tokens` |

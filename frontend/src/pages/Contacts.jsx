@@ -129,6 +129,8 @@ export default function Contacts() {
   const [pendingVoiceLogsExpanded, setPendingVoiceLogsExpanded] = useState(false)
   const [scheduledMeetings, setScheduledMeetings] = useState([]) // overdue interactions/meeting rows still marked 'scheduled'
   const [scheduledMeetingsExpanded, setScheduledMeetingsExpanded] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set()) // free-form checkbox selection, for the "send to selected" action
+  const [showSelectedSend, setShowSelectedSend] = useState(false)
 
   useEffect(() => {
     loadContacts()
@@ -392,6 +394,24 @@ export default function Contacts() {
     setContacts(contacts.map(c => (c.id === contact.id ? data : c)))
   }
 
+  function toggleSelected(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllFiltered(ids, checked) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (checked) ids.forEach(id => next.add(id))
+      else ids.forEach(id => next.delete(id))
+      return next
+    })
+  }
+
   const visibleColumns = columns.filter(c => c.visible)
 
   const filtered = contacts.filter(c => {
@@ -527,8 +547,25 @@ export default function Contacts() {
 
       {/* Results count + managers toggle */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">
-          {filtered.length} אנשי קשר {(search || genderFilter !== 'all' || !showAll) ? '(מסונן)' : ''}
+        <div className="text-sm text-gray-500 flex items-center gap-3">
+          <span>{filtered.length} אנשי קשר {(search || genderFilter !== 'all' || !showAll) ? '(מסונן)' : ''}</span>
+          {selectedIds.size > 0 && (
+            <span className="flex items-center gap-2 text-blue-700">
+              <span className="text-xs bg-blue-100 px-2 py-1 rounded-full">{selectedIds.size} נבחרו</span>
+              <button
+                onClick={() => setShowSelectedSend(true)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700"
+              >
+                📤 שלח WhatsApp לנבחרים
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs px-2 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+              >
+                בטל בחירה
+              </button>
+            </span>
+          )}
         </div>
         <button
           onClick={() => setShowAll(!showAll)}
@@ -553,9 +590,18 @@ export default function Contacts() {
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-auto max-h-[70vh]">
-            <table className="text-sm" style={{ tableLayout: 'fixed', width: visibleColumns.reduce((sum, c) => sum + (c.width || DEFAULT_WIDTH), 0) + 120 }}>
+            <table className="text-sm" style={{ tableLayout: 'fixed', width: visibleColumns.reduce((sum, c) => sum + (c.width || DEFAULT_WIDTH), 0) + 156 }}>
               <thead className="border-b border-gray-200">
                 <tr>
+                  <th className="sticky top-0 z-10 bg-gray-50 text-center px-2 py-3" style={{ width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="בחר הכל"
+                      checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
+                      onChange={e => toggleSelectAllFiltered(filtered.map(c => c.id), e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                  </th>
                   {visibleColumns.map(col => (
                     <th
                       key={col.key}
@@ -592,7 +638,15 @@ export default function Contacts() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map(contact => (
-                  <tr key={contact.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={contact.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(contact.id) ? 'bg-blue-50/60' : ''}`}>
+                    <td className="px-2 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(contact.id)}
+                        onChange={() => toggleSelected(contact.id)}
+                        className="w-4 h-4"
+                      />
+                    </td>
                     {visibleColumns.map(col => (
                       <td key={col.key} className="px-4 py-3 text-gray-600 overflow-hidden text-ellipsis" style={{ width: col.width || DEFAULT_WIDTH }}>
                         {col.key === 'name' ? (
@@ -734,6 +788,33 @@ export default function Contacts() {
             templates={templates}
             initialContactIds={notDone}
             onClose={() => setBulkReminderCol(null)}
+          />
+        )
+      })()}
+
+      {showSelectedSend && (() => {
+        if (templates.length === 0) {
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl p-8 text-center space-y-3 max-w-sm w-full">
+                <p className="text-lg font-medium">אין תבניות הודעה</p>
+                <p className="text-sm text-gray-500">צור תבנית תחילה בדף WhatsApp</p>
+                <button onClick={() => setShowSelectedSend(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+                  סגור
+                </button>
+              </div>
+            </div>
+          )
+        }
+        return (
+          <BulkSendModal
+            templates={templates}
+            initialContactIds={[...selectedIds]}
+            onClose={() => {
+              setShowSelectedSend(false)
+              setSelectedIds(new Set())
+              loadContacts()
+            }}
           />
         )
       })()}

@@ -20,6 +20,7 @@
 
 | תאריך | פיצ'ר | PR | Spec | Plan |
 |---|---|---|---|---|
+| 2026-09-14 | בחירה חופשית של מורים (תיבות סימון) לשליחת WhatsApp | [#18](https://github.com/avnamer/teacher-crm/pull/18) | — | — |
 | 2026-09-14 | תצוגת "בעוד X ימים" לפגישה עתידית (במקום ימים שליליים) | [#13](https://github.com/avnamer/teacher-crm/pull/13) | — | — |
 | 2026-09-14 | מחיקת פגישה (לכל המשתתפים) | [#12](https://github.com/avnamer/teacher-crm/pull/12) | [spec](superpowers/specs/2026-09-13-delete-meeting-design.md) | [plan](superpowers/plans/2026-09-13-delete-meeting.md) |
 | 2026-09-13 | עריכת תאריך ותוכן של פגישה | [#11](https://github.com/avnamer/teacher-crm/pull/11) | [spec](superpowers/specs/2026-09-13-edit-meeting-design.md) | [plan](superpowers/plans/2026-09-13-edit-meeting.md) |

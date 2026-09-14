@@ -262,3 +262,28 @@ CREATE POLICY "Owner full access" ON whatsapp_auth      FOR ALL USING (auth.jwt(
 CREATE POLICY "Owner full access" ON scheduled_messages FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON mentors            FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON pending_voice_logs FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- Single-user auth (2026-09-14) — BLOCK B: remove public access (CUTOVER)
+-- Run ONLY after production login is verified. Drops every world-open policy
+-- and every any-authenticated policy, leaving only "Owner full access".
+-- ─────────────────────────────────────────────────────────────
+-- Any-authenticated policies (auth.role() = 'authenticated' — would let ANY signed-in user in)
+DROP POLICY IF EXISTS "Authenticated users full access" ON contacts;
+DROP POLICY IF EXISTS "Authenticated users full access" ON interactions;
+DROP POLICY IF EXISTS "Authenticated users full access" ON meetings;
+DROP POLICY IF EXISTS "Authenticated users full access" ON message_templates;
+DROP POLICY IF EXISTS "Authenticated users full access" ON settings;
+DROP POLICY IF EXISTS "Authenticated users full access" ON whatsapp_auth;
+DROP POLICY IF EXISTS "Authenticated users full access" ON scheduled_messages;
+-- Public (anon) policies
+DROP POLICY IF EXISTS "Public can read contacts by phone" ON contacts;
+DROP POLICY IF EXISTS "Public full access to interactions" ON interactions;
+DROP POLICY IF EXISTS "Public can read available meetings" ON meetings;
+DROP POLICY IF EXISTS "Public can insert meetings" ON meetings;
+DROP POLICY IF EXISTS "Public full access to message_templates" ON message_templates;
+DROP POLICY IF EXISTS "Public can read settings" ON settings;
+DROP POLICY IF EXISTS "Public can update settings" ON settings;
+DROP POLICY IF EXISTS "Public full access to scheduled_messages" ON scheduled_messages;
+DROP POLICY IF EXISTS "Public full access to mentors" ON mentors;
+DROP POLICY IF EXISTS "Public full access to pending_voice_logs" ON pending_voice_logs;

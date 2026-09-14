@@ -7,7 +7,14 @@ export default function AuthGate({ children }) {
   const [session, setSession] = useState(undefined) // undefined = still loading
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null))
+    // getSession() and onAuthStateChange (which also fires an INITIAL_SESSION
+    // event) are intentionally redundant; whichever resolves reflects the same
+    // cached session. On a getSession() failure, fall through to the login
+    // screen rather than hanging on the loading spinner.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSession(data.session ?? null))
+      .catch(() => setSession(null))
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) =>
       setSession(s ?? null)
     )

@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
+import { signOut } from '../lib/auth.js'
 
 const links = [
   { to: '/contacts', label: 'דשבורד', icon: '👥' },
@@ -41,6 +42,13 @@ export default function Navbar() {
                 {link.label}
               </NavLink>
             ))}
+            <button
+              onClick={() => signOut()}
+              className="px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
+            >
+              <span className="ml-1">🚪</span>
+              התנתק
+            </button>
           </div>
 
           {/* Mobile hamburger */}
@@ -73,6 +81,13 @@ export default function Navbar() {
                 {link.label}
               </NavLink>
             ))}
+            <button
+              onClick={() => { setMobileOpen(false); signOut() }}
+              className="block w-full text-right px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100"
+            >
+              <span className="ml-1">🚪</span>
+              התנתק
+            </button>
           </div>
         )}
       </div>

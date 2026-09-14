@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
+import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
 import { interactionIcon } from '../lib/interactions.js'
@@ -114,6 +115,7 @@ export default function Contacts() {
   const [showMondayColumns, setShowMondayColumns] = useState(false)
   const [taskComposerTeacher, setTaskComposerTeacher] = useState(null) // contact | null
   const [bulkReminderCol, setBulkReminderCol] = useState(null) // column | null
+  const [singleSendContact, setSingleSendContact] = useState(null) // contact | null
   const [templates, setTemplates] = useState([])
   const [editingCell, setEditingCell] = useState(null) // { contactId, colKey } | null
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
@@ -595,6 +597,13 @@ export default function Contacts() {
                       <td key={col.key} className="px-4 py-3 text-gray-600 overflow-hidden text-ellipsis" style={{ width: col.width || DEFAULT_WIDTH }}>
                         {col.key === 'name' ? (
                           <>
+                            <button
+                              onClick={() => setSingleSendContact(contact)}
+                              className="ml-1.5 align-middle opacity-80 hover:opacity-100"
+                              title={`שלח הודעת WhatsApp ל${contact.name}`}
+                            >
+                              <WhatsAppIcon className="w-4 h-4 inline" />
+                            </button>
                             <Link to={`/contacts/${contact.id}`} className="text-blue-600 hover:underline font-medium">
                               {contact.name}
                             </Link>
@@ -680,6 +689,16 @@ export default function Contacts() {
           taskColumns={columns.filter(c => c.source === 'task')}
           templates={templates}
           onClose={() => setTaskComposerTeacher(null)}
+        />
+      )}
+
+      {singleSendContact && (
+        <SingleSendModal
+          contact={singleSendContact}
+          templates={templates}
+          onClose={() => setSingleSendContact(null)}
+          // Refresh so the "last contact" column and recency colours pick up the new message.
+          onSent={loadContacts}
         />
       )}
 

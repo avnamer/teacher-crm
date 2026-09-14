@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { backendFetch } from '../lib/api.js'
 import SendQueueModal from '../components/SendQueueModal.jsx'
@@ -6,6 +6,16 @@ import { messageForContact, phoneProblem, MANUAL_DRIVER, fetchDriver } from '../
 import {
   isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL,
 } from '../lib/teachers.js'
+
+// Must stay in sync with the placeholders resolveMessage() substitutes in lib/whatsapp.js.
+const TEMPLATE_VARIABLES = [
+  { token: '{{name}}', label: 'שם' },
+  { token: '{{school}}', label: 'בית ספר' },
+  { token: '{{class_name}}', label: 'כיתה' },
+  { token: '{{hackathon_date}}', label: 'תאריך אקתון' },
+  { token: '{{phone}}', label: 'טלפון' },
+  { token: '{{open_tasks}}', label: 'משימות פתוחות' },
+]
 
 export default function WhatsApp() {
   const [templates, setTemplates] = useState([])
@@ -145,10 +155,15 @@ export default function WhatsApp() {
       <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
         <h3 className="font-medium text-gray-700 mb-2">משתנים זמינים בתבניות:</h3>
         <div className="flex flex-wrap gap-2 text-sm">
-          {['{{name}}', '{{school}}', '{{class_name}}', '{{hackathon_date}}', '{{phone}}', '{{open_tasks}}'].map(v => (
-            <code key={v} className="bg-white px-2 py-1 rounded border text-gray-600">{v}</code>
+          {TEMPLATE_VARIABLES.map(v => (
+            <code key={v.token} className="bg-white px-2 py-1 rounded border text-gray-600">
+              {v.label}: {v.token}
+            </code>
           ))}
         </div>
+        <p className="text-xs text-gray-500 mt-2">
+          בעריכת תבנית אפשר ללחוץ על משתנה או לגרור אותו לתוך ההודעה.
+        </p>
       </div>
 
       {/* Template editor modal */}
@@ -656,6 +671,27 @@ function TemplateEditor({ template, onClose, onSaved }) {
     media_url: template?.media_url || '',
   })
   const [saving, setSaving] = useState(false)
+  // The body a clicked variable goes into: whichever textarea was focused last.
+  const [activeField, setActiveField] = useState('body_male')
+  const bodyRefs = { body_male: useRef(null), body_female: useRef(null) }
+
+  /** Insert a variable at the caret (replacing any selection) of the last-focused body. */
+  function insertVariable(token) {
+    const el = bodyRefs[activeField].current
+    // A textarea keeps selectionStart/End after it loses focus, so clicking a chip
+    // (which blurs the textarea) still inserts where the caret was.
+    const start = el ? el.selectionStart : form[activeField].length
+    const end = el ? el.selectionEnd : start
+    setForm(prev => {
+      const value = prev[activeField]
+      return { ...prev, [activeField]: value.slice(0, start) + token + value.slice(end) }
+    })
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(start + token.length, start + token.length)
+    })
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -696,18 +732,56 @@ function TemplateEditor({ template, onClose, onSaved }) {
               placeholder="למשל: הזמנה לאקתון"
               className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-          <div>
-            <label className="text-sm text-gray-600">הודעה לזכר</label>
-            <textarea value={form.body_male} onChange={e => setForm({...form, body_male: e.target.value})}
-              rows={3} placeholder="שלום {{name}}, ..."
-              className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+          <div className="bg-gray-50 border rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-2">
+              לחצו על משתנה כדי להוסיף אותו במקום הסמן, או גררו אותו לתוך ההודעה
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {TEMPLATE_VARIABLES.map(v => (
+                // A span, not a <button>: Firefox won't start a native drag from a button.
+                <span
+                  key={v.token}
+                  role="button"
+                  tabIndex={0}
+                  draggable
+                  title={v.token}
+                  onClick={() => insertVariable(v.token)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); insertVariable(v.token) }
+                  }}
+                  onDragStart={e => {
+                    // Dropping plain text on a textarea is handled natively by the browser:
+                    // it inserts at the drop point and fires input, which reaches onChange.
+                    e.dataTransfer.setData('text/plain', v.token)
+                    e.dataTransfer.effectAllowed = 'copy'
+                  }}
+                  className="select-none cursor-grab active:cursor-grabbing bg-white px-2 py-1 rounded-full border border-blue-300 text-blue-700 text-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  + {v.label}
+                </span>
+              ))}
+            </div>
           </div>
-          <div>
-            <label className="text-sm text-gray-600">הודעה לנקבה</label>
-            <textarea value={form.body_female} onChange={e => setForm({...form, body_female: e.target.value})}
-              rows={3} placeholder="שלום {{name}}, ..."
-              className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
+          {[
+            { field: 'body_male', label: 'הודעה לזכר' },
+            { field: 'body_female', label: 'הודעה לנקבה' },
+          ].map(({ field, label }) => (
+            <div key={field}>
+              <label className="text-sm text-gray-600">
+                {label}
+                {activeField === field && (
+                  <span className="text-xs text-blue-600 mr-2">← משתנים יתווספו כאן</span>
+                )}
+              </label>
+              <textarea
+                ref={bodyRefs[field]}
+                value={form[field]}
+                onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
+                onFocus={() => setActiveField(field)}
+                rows={3} placeholder="שלום {{name}}, ..."
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          ))}
           <div>
             <label className="text-sm text-gray-600">קישור למדיה (אופציונלי)</label>
             <input value={form.media_url} onChange={e => setForm({...form, media_url: e.target.value})}

@@ -20,7 +20,9 @@ const STATUS = {
   invalid: { label: 'לא תקין', cls: 'bg-red-100 text-red-700' },
 }
 
-export default function SendQueueModal({ template, contacts, onClose }) {
+// sentVia: 'bulk' (group send — gets the distinct bulk icon in the history) or
+// 'single' (one teacher from the dashboard — shown as a plain "הודעה").
+export default function SendQueueModal({ template, contacts, onClose, sentVia = 'bulk' }) {
   // Contacts with an unusable phone can't be messaged at all, so they start in a
   // terminal 'invalid' state rather than blocking the queue when reached.
   const [statuses, setStatuses] = useState(() => {
@@ -87,16 +89,18 @@ export default function SendQueueModal({ template, contacts, onClose }) {
 
     const { error } = await supabase.from('interactions').insert({
       contact_id: contact.id,
-      type: 'message_sent',
+      // A send that actually reached several teachers is tagged 'mailing_list' (plane
+      // icon); one that reached a single teacher is 'message_sent' (sad-face icon) —
+      // even if it came from the group-send screen, e.g. a filter that matched one
+      // person. What matters is how many people got it, not which screen sent it.
+      type: sentVia === 'bulk' && contacts.length > 1 ? 'mailing_list' : 'message_sent',
       content: messages[contact.id],
       metadata: {
         channel: 'whatsapp',
         driver: 'manual',
         template_id: template?.id || null,
         template_name: template?.name || null,
-        // Marks this as sent through the send queue rather than logged by hand
-        // afterwards, which is what earns it the distinct icon in the history.
-        sent_via: 'bulk',
+        sent_via: sentVia,
         recipient_count: contacts.length,
       },
     })

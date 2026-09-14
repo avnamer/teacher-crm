@@ -11,22 +11,30 @@ export const INTERACTION_TYPES = [
   { value: 'message_sent', label: 'הודעה', icon: '😞' },
   { value: 'correspondence', label: 'התכתבות', icon: '📜' },
   { value: 'meeting', label: 'פגישה', icon: '🤝' },
+  // A WhatsApp message sent to several teachers at once through the bulk send queue
+  // (as opposed to 'message_sent', which is one teacher). Also selectable by hand in
+  // the interaction-type dropdown, for logging a mailing sent outside the system.
+  { value: 'mailing_list', label: 'רשימת דיוור', icon: '✈️' },
 ]
 
-/**
- * Messages sent through the WhatsApp send queue get their own icon, so a message the
- * system sent is distinguishable at a glance from one logged by hand after the fact.
- *
- * Unicode has no paper-plane emoji (it is a well-known gap), so this is the closest
- * single character that reads as "flew out from here". Changing it is a one-line edit
- * and every surface picks it up.
- */
-export const BULK_SEND_ICON = '✈️'
-export const BULK_SEND_LABEL = 'הודעה שנשלחה דרך המערכת'
+export const BULK_SEND_LABEL = 'רשימת דיוור'
+// Kept as an alias so existing imports of BULK_SEND_ICON keep working.
+export const BULK_SEND_ICON = INTERACTION_TYPES.find(t => t.value === 'mailing_list').icon
 
-/** Was this interaction sent through the WhatsApp send queue? */
+/**
+ * Was this interaction actually sent to several teachers at once? True for rows
+ * tagged 'mailing_list' directly, and — for older rows recorded before that type
+ * existed — for rows carrying the same signal in metadata.sent_via instead.
+ *
+ * Either way this also requires recipient_count > 1: the group-send screen sets
+ * sent_via: 'bulk' just from being that screen, even when the filter it was given
+ * happens to match only one teacher. A send that reached one person is "הודעה",
+ * not "רשימת דיוור", no matter which screen sent it — the tag and icon should
+ * describe what happened, not which button was clicked.
+ */
 export function isBulkSent(interaction) {
-  return interaction?.metadata?.sent_via === 'bulk'
+  const wasBulkFlow = interaction?.type === 'mailing_list' || interaction?.metadata?.sent_via === 'bulk'
+  return wasBulkFlow && (interaction?.metadata?.recipient_count ?? 0) > 1
 }
 
 /** Icon for a whole interaction row — accounts for how it was sent, not just its type. */

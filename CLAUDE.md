@@ -39,6 +39,16 @@ repeat this.
   publishing"** button on the Deploys page first, iterate freely, then unlock and
   push once when you're confident in the fix.
 
+### Exception: the "סיימנו כאן" close-out
+When the user invokes the `close-teacher-crm-feature` skill ("סיימנו כאן", "תעלה את
+השינויים לרשת", "ship it", etc.), **all the credit-saving rules in this section are
+suspended for the duration of that skill.** The user has declared the work done, so
+the goal becomes a complete update of GitHub and the live Netlify site: commit all
+finished work, push, open the PR, merge to `main`, and let the production deploy run —
+without holding back to save credits. The concurrent-session rules below (scoped
+staging, no direct push to `main`) still apply. After the skill finishes, these
+credit-saving rules are back in force.
+
 ### If you're not sure whether something is actually live
 
 Don't assume a local fix is live for the user just because it's pushed. Ask (or

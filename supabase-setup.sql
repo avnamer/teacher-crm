@@ -287,3 +287,17 @@ DROP POLICY IF EXISTS "Public can update settings" ON settings;
 DROP POLICY IF EXISTS "Public full access to scheduled_messages" ON scheduled_messages;
 DROP POLICY IF EXISTS "Public full access to mentors" ON mentors;
 DROP POLICY IF EXISTS "Public full access to pending_voice_logs" ON pending_voice_logs;
+
+-- ─────────────────────────────────────────────────────────────
+-- Single-user auth (2026-09-14) — BLOCK B2: close leftover public policies
+-- The live DB had "Anon full access" policies (added via the dashboard, never
+-- in this file) that Block B didn't know about: on contacts, and on two
+-- orphan tables (monday_tasks, teacher_teams) not used by the app or defined
+-- here. Drop the public access; lock the orphan tables (RLS on, no policy →
+-- service-role only). contacts keeps only "Owner full access".
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE monday_tasks  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teacher_teams ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anon full access" ON contacts;
+DROP POLICY IF EXISTS "Anon full access" ON monday_tasks;
+DROP POLICY IF EXISTS "Anon full access" ON teacher_teams;

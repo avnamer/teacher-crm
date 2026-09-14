@@ -10,7 +10,14 @@ function daysSince(dateStr) {
 function dateWithDaysAgo(dateStr) {
   const days = daysSince(dateStr)
   const dateLabel = new Date(dateStr).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
-  const daysLabel = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+  // A negative days-since is a future date (e.g. a scheduled meeting) — "לפני -X ימים"
+  // reads as nonsense, so a future date gets its own "בעוד" (in X days) phrasing.
+  const daysLabel =
+    days === 0 ? 'היום' :
+    days === 1 ? 'לפני יום' :
+    days === -1 ? 'בעוד יום' :
+    days < 0 ? `בעוד ${-days} ימים` :
+    `לפני ${days} ימים`
   return `${dateLabel} (${daysLabel})`
 }
 

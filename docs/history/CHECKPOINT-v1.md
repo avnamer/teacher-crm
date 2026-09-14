@@ -1,5 +1,11 @@
 # Checkpoint: v1.0
 
+> **📦 Historical, frozen. Don't update this file.** It's the working log up to PR #4 (2026-09-08 → 09-11).
+> - Current state: [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Feature history: [docs/README.md](../README.md).
+> - The open items listed below were moved to [GitHub Issues](https://github.com/avnamer/teacher-crm/issues).
+> - Stale details: deployment is now from `main` (not `feature/mentors-page`), and the rollback
+>   path below is from an old checkout location. The `v1.0` tag itself is still valid.
+
 **Date:** 2026-09-08
 **Branch:** `feature/mentors-page`
 **Purpose:** A known-good snapshot to roll back to if later development gets stuck or breaks something. If that happens:

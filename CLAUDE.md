@@ -31,8 +31,9 @@ repeat this.
   one deploy that should actually cost credits — make it count. Do not merge
   half-finished work just to "check if it deploys."
 - Merging a PR is a significant action on shared state — Claude Code's safety
-  classifier blocks agents from merging PRs directly. The user merges PRs themselves;
-  don't try to work around this.
+  classifier may block agents from merging PRs directly. Merge only through the
+  `close-teacher-crm-feature` skill (the user says "סיימנו כאן") or let the user merge;
+  if the merge is blocked, hand the user the PR link — don't try to work around it.
 - If you're mid-debugging and need multiple rounds of push-test-push (e.g. chasing a
   bug that only reproduces in production), use Netlify's **"Lock to stop auto
   publishing"** button on the Deploys page first, iterate freely, then unlock and
@@ -63,6 +64,18 @@ the real cause (paused deploys) was found.
 - Data lives in Supabase project `teacher-crm` (ref `ltfguyjrwrcghllvrixu`) — see the
   `run-teacher-crm` skill for how to check/resume it if paused (separate free-tier
   auto-pause behavior, unrelated to Netlify credits)
+- Architecture, schema, endpoints, env vars, deployment: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+## Documentation — where things go
+
+- **Open items** (bugs, review findings not fixed, tech debt, ideas, product questions)
+  → a **GitHub Issue** (`gh issue create --repo avnamer/teacher-crm`), never a list in an
+  MD file. Check `gh issue list --search` for duplicates first.
+- **Current state** (schema, endpoints, env, shared modules, deploy) → `docs/ARCHITECTURE.md`.
+- **What shipped when** → a row in the feature log in `docs/README.md`.
+- **Why it was designed this way** → the feature's spec in `docs/superpowers/specs/` and its PR description.
+- `docs/superpowers/plans/`, `docs/superpowers/specs/` and `docs/history/` are historical — don't rewrite them.
+- Link, don't copy. The `close-teacher-crm-feature` skill does the docs update as part of every close-out.
 
 ## Concurrent sessions share this checkout
 

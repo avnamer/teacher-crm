@@ -20,6 +20,7 @@
 
 | תאריך | פיצ'ר | PR | Spec | Plan |
 |---|---|---|---|---|
+| 2026-09-14 | תיבת "הייתה תגובה" — הודעות/דיוור נספרים ב"קשר אחרון" רק אם סומנו | [#33](https://github.com/avnamer/teacher-crm/pull/33) | — | — |
 | 2026-09-14 | בחירה חופשית של מורים (תיבות סימון) לשליחת WhatsApp | [#18](https://github.com/avnamer/teacher-crm/pull/18) | — | — |
 | 2026-09-14 | 🔒 שלב 1 אבטחה: התחברות משתמש-יחיד (Google) + נעילת RLS לכל הטבלאות | [#17](https://github.com/avnamer/teacher-crm/pull/17) | [spec](superpowers/specs/2026-09-14-supabase-auth-single-user-design.md) | [plan](superpowers/plans/2026-09-14-supabase-auth-single-user.md) |
 | 2026-09-14 | WhatsApp: צ'יפים למשתני תבנית, שליחה פר-מורה, תג רשימת תפוצה | [#16](https://github.com/avnamer/teacher-crm/pull/16) | — | — |

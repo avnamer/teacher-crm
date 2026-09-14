@@ -13,20 +13,23 @@ export function getOAuth2Client() {
   )
 }
 
-// Tokens are stored in Supabase (settings.google_calendar_tokens) rather than
-// on local disk — Render's free tier filesystem is ephemeral and wipes local
-// files on every restart/redeploy, which was silently breaking Calendar auth.
+// Tokens live in `app_private`, a table with RLS enabled and NO policy, so the
+// public anon key (used by the browser frontend) can neither read nor write
+// them — only this backend's service key, which bypasses RLS, can. They are
+// deliberately kept out of the frontend-readable `settings` table. Storing them
+// in Supabase (rather than on local disk) is still required because Render's
+// free-tier filesystem is ephemeral and wipes local files on every
+// restart/redeploy, which was silently breaking Calendar auth.
 export async function saveTokens(tokens) {
   const { error } = await supabase
-    .from('settings')
-    .update({ google_calendar_tokens: tokens })
-    .eq('id', 'global')
+    .from('app_private')
+    .upsert({ id: 'global', google_calendar_tokens: tokens })
   if (error) throw new Error('שגיאה בשמירת טוקן Google: ' + error.message)
 }
 
 export async function loadTokens() {
   const { data, error } = await supabase
-    .from('settings')
+    .from('app_private')
     .select('google_calendar_tokens')
     .eq('id', 'global')
     .single()

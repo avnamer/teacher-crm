@@ -220,3 +220,29 @@ CREATE INDEX IF NOT EXISTS idx_pending_voice_logs_mentor_name ON pending_voice_l
 
 ALTER TABLE pending_voice_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public full access to pending_voice_logs" ON pending_voice_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- ─────────────────────────────────────────────────────────────
+-- Private secrets (2026-09-14) — Google OAuth tokens
+-- ─────────────────────────────────────────────────────────────
+-- Google Calendar tokens must never be reachable with the public anon key that
+-- the browser frontend uses. `settings` is world-readable (see its SELECT
+-- policy above), so tokens are moved here: RLS is ON and there is deliberately
+-- NO policy, which means anon/authenticated roles get nothing. Only the
+-- backend's service_role key (which bypasses RLS) can read or write this table.
+CREATE TABLE IF NOT EXISTS app_private (
+  id TEXT PRIMARY KEY,
+  google_calendar_tokens JSONB
+);
+
+ALTER TABLE app_private ENABLE ROW LEVEL SECURITY;
+-- (No CREATE POLICY on purpose. service_role bypasses RLS; everyone else is denied.)
+
+-- One-time migration of any existing token value out of the public table.
+INSERT INTO app_private (id, google_calendar_tokens)
+SELECT 'global', google_calendar_tokens
+FROM settings
+WHERE id = 'global' AND google_calendar_tokens IS NOT NULL
+ON CONFLICT (id) DO UPDATE SET google_calendar_tokens = EXCLUDED.google_calendar_tokens;
+
+-- Remove the world-readable copy for good.
+ALTER TABLE settings DROP COLUMN IF EXISTS google_calendar_tokens;

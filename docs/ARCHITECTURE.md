@@ -18,9 +18,12 @@ Phone / browser
             └── Google Calendar (meeting sync, event creation)
 ```
 
-There is **no authentication**. The frontend reads and writes Supabase directly with the
-anon key (RLS policies allow public access), and backend endpoints are unauthenticated.
-See the security issue in GitHub Issues before exposing anything new.
+Authentication and access control are being reworked (top item in
+[docs/TODO.md](TODO.md)); this section will be updated when that lands. Don't add new
+tables, policies, or backend endpoints without checking with the user first. Google OAuth
+tokens are already isolated: they live in the private `app_private` table (RLS on, no
+policy), reachable only by the backend's service key — never put secrets in a
+frontend-readable table.
 
 ## Frontend (`frontend/`)
 
@@ -48,7 +51,7 @@ copying them into pages:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/health` | Health check |
-| `GET /api/google/auth`, `/callback`, `/status` | Google OAuth; tokens stored in `settings.google_calendar_tokens` |
+| `GET /api/google/auth`, `/callback`, `/status` | Google OAuth; tokens stored in the private `app_private` table |
 | `POST /api/google/sync-meetings` | Pull Google Calendar events into the legacy `meetings` table |
 | `POST /api/google/create-event` | Create an event in the user's calendar (voice-log action items) |
 | `POST /api/voice-log/analyze` | Send a transcript to Claude and get back teacher/summary/action items/dates |
@@ -65,7 +68,8 @@ applied. Add new changes at the end; don't edit earlier statements.
 | `contacts` | Teachers (plus an admin pseudo-row, `custom_fields.is_admin_row`). `custom_fields` JSONB holds Monday data, task checkbox values, `mentor_name`, `_manual_edit` |
 | `interactions` | Every touchpoint: `type` ∈ `message_sent`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` (meetings), `sent_via` / `recipient_count` (bulk WhatsApp) |
 | `pending_voice_logs` | Unapproved voice-log analyses, scoped by `mentor_name` |
-| `settings` | Single row: Monday board, working hours, `contacts_columns` (column config JSONB), `google_calendar_tokens` |
+| `settings` | Single row, **frontend-readable**: Monday board, working hours, `contacts_columns` (column config JSONB). Never store secrets here |
+| `app_private` | Secrets reachable only by the backend service key (RLS on, no policy): `google_calendar_tokens` |
 | `mentors` | Mentor directory |
 | `message_templates` | WhatsApp templates |
 | `meetings` | **Legacy**: Google Calendar sync only. Still read by `ContactDetail.jsx` and `/book`, but not by the Meetings page |

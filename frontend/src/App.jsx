@@ -6,16 +6,12 @@ import Mentors from './pages/Mentors.jsx'
 import WhatsApp from './pages/WhatsApp.jsx'
 import Meetings from './pages/Meetings.jsx'
 import Settings from './pages/Settings.jsx'
-import BookMeeting from './pages/BookMeeting.jsx'
 import VoiceLog from './pages/VoiceLog.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 function App() {
   return (
     <Routes>
-      {/* Public route - no layout */}
-      <Route path="/book/:contactId" element={<BookMeeting />} />
-
       {/* Admin routes with layout */}
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/contacts" replace />} />

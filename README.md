@@ -24,7 +24,7 @@ cd backend && npm install && npm run dev    # http://localhost:3001
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-צריך את הקבצים `backend/.env` ו-`frontend/.env.local`. הם לא נשמרים בגיט, ורשימת המשתנים נמצאת ב-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#environment-variables).
+צריך את הקבצים `backend/.env` ו-`frontend/.env.local`. הם לא נשמרים בגיט — מעתיקים מ-[`backend/.env.example`](backend/.env.example) ו-[`frontend/.env.example`](frontend/.env.example) וממלאים את הערכים (אצל האדמין). פירוט המשתנים ב-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#environment-variables).
 
 ## תיעוד
 

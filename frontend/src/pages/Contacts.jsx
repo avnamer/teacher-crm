@@ -78,7 +78,14 @@ function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
     const source = useLatestOther ? latestOther : entry
     if (!source) return '-'
     const days = daysSince(source.created_at)
-    const daysStr = days === 0 ? 'היום' : days === 1 ? 'לפני יום' : `לפני ${days} ימים`
+    // A negative days-since is a future date (e.g. a scheduled meeting) — "לפני -X ימים"
+    // reads as nonsense, so a future date gets its own "בעוד" (in X days) phrasing.
+    const daysStr =
+      days === 0 ? 'היום' :
+      days === 1 ? 'לפני יום' :
+      days === -1 ? 'בעוד יום' :
+      days < 0 ? `בעוד ${-days} ימים` :
+      `לפני ${days} ימים`
     const prefix = useLatestOther ? `${interactionIcon(latestOther)} ` : ''
     return `${prefix}(${daysStr}) ${firstSentence(source.content)}`
   }

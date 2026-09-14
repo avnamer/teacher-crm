@@ -262,3 +262,42 @@ CREATE POLICY "Owner full access" ON whatsapp_auth      FOR ALL USING (auth.jwt(
 CREATE POLICY "Owner full access" ON scheduled_messages FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON mentors            FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON pending_voice_logs FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- Single-user auth (2026-09-14) — BLOCK B: remove public access (CUTOVER)
+-- Run ONLY after production login is verified. Drops every world-open policy
+-- and every any-authenticated policy, leaving only "Owner full access".
+-- ─────────────────────────────────────────────────────────────
+-- Any-authenticated policies (auth.role() = 'authenticated' — would let ANY signed-in user in)
+DROP POLICY IF EXISTS "Authenticated users full access" ON contacts;
+DROP POLICY IF EXISTS "Authenticated users full access" ON interactions;
+DROP POLICY IF EXISTS "Authenticated users full access" ON meetings;
+DROP POLICY IF EXISTS "Authenticated users full access" ON message_templates;
+DROP POLICY IF EXISTS "Authenticated users full access" ON settings;
+DROP POLICY IF EXISTS "Authenticated users full access" ON whatsapp_auth;
+DROP POLICY IF EXISTS "Authenticated users full access" ON scheduled_messages;
+-- Public (anon) policies
+DROP POLICY IF EXISTS "Public can read contacts by phone" ON contacts;
+DROP POLICY IF EXISTS "Public full access to interactions" ON interactions;
+DROP POLICY IF EXISTS "Public can read available meetings" ON meetings;
+DROP POLICY IF EXISTS "Public can insert meetings" ON meetings;
+DROP POLICY IF EXISTS "Public full access to message_templates" ON message_templates;
+DROP POLICY IF EXISTS "Public can read settings" ON settings;
+DROP POLICY IF EXISTS "Public can update settings" ON settings;
+DROP POLICY IF EXISTS "Public full access to scheduled_messages" ON scheduled_messages;
+DROP POLICY IF EXISTS "Public full access to mentors" ON mentors;
+DROP POLICY IF EXISTS "Public full access to pending_voice_logs" ON pending_voice_logs;
+
+-- ─────────────────────────────────────────────────────────────
+-- Single-user auth (2026-09-14) — BLOCK B2: close leftover public policies
+-- The live DB had "Anon full access" policies (added via the dashboard, never
+-- in this file) that Block B didn't know about: on contacts, and on two
+-- orphan tables (monday_tasks, teacher_teams) not used by the app or defined
+-- here. Drop the public access; lock the orphan tables (RLS on, no policy →
+-- service-role only). contacts keeps only "Owner full access".
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE monday_tasks  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teacher_teams ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anon full access" ON contacts;
+DROP POLICY IF EXISTS "Anon full access" ON monday_tasks;
+DROP POLICY IF EXISTS "Anon full access" ON teacher_teams;

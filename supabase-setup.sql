@@ -246,3 +246,19 @@ ON CONFLICT (id) DO UPDATE SET google_calendar_tokens = EXCLUDED.google_calendar
 
 -- Remove the world-readable copy for good.
 ALTER TABLE settings DROP COLUMN IF EXISTS google_calendar_tokens;
+
+-- ─────────────────────────────────────────────────────────────
+-- Single-user auth (2026-09-14) — BLOCK A: owner policies
+-- Safe to run at any time. Additive only: grants the logged-in owner
+-- access without changing existing public access. Run this, verify login
+-- works, THEN run Block B (removes the public policies).
+-- ─────────────────────────────────────────────────────────────
+CREATE POLICY "Owner full access" ON contacts          FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON interactions       FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON meetings           FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON message_templates  FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON settings           FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON whatsapp_auth      FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON scheduled_messages FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON mentors            FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON pending_voice_logs FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

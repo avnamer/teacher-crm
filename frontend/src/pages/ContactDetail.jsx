@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
-import { INTERACTION_TYPES, interactionIcon, interactionLabel } from '../lib/interactions.js'
+import { INTERACTION_TYPES, interactionIcon, interactionLabel, isSentMessage } from '../lib/interactions.js'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -121,6 +121,22 @@ export default function ContactDetail() {
       setInteractions(prev => prev.map(x => (x.id === interaction.id ? { ...x, metadata: newMetadata } : x)))
     } catch (err) {
       alert('שגיאה בעדכון משימה: ' + err.message)
+    }
+  }
+
+  // Marks whether a sent message/mailing actually got a response — only then does it count
+  // toward the "last contact" recency indicators on the dashboard (see countsTowardRecency).
+  async function toggleResponded(interaction) {
+    const newMetadata = { ...interaction.metadata, responded: !interaction.metadata?.responded }
+    try {
+      const { error } = await supabase
+        .from('interactions')
+        .update({ metadata: newMetadata })
+        .eq('id', interaction.id)
+      if (error) throw error
+      setInteractions(prev => prev.map(x => (x.id === interaction.id ? { ...x, metadata: newMetadata } : x)))
+    } catch (err) {
+      alert('שגיאה בעדכון: ' + err.message)
     }
   }
 
@@ -266,6 +282,15 @@ export default function ContactDetail() {
                       <span className="flex-1 min-w-0 truncate text-sm text-gray-400">{i.content}</span>
                     ) : (
                       <span className="flex-1" />
+                    )}
+                    {isSentMessage(i) && (
+                      <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0 whitespace-nowrap"
+                        title="סמן אם התקבלה תגובה מהמורה להודעה הזו">
+                        <input type="checkbox" checked={!!i.metadata?.responded}
+                          onChange={() => toggleResponded(i)}
+                          className="w-4 h-4" />
+                        הייתה תגובה
+                      </label>
                     )}
                     <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{timeLabel}</span>
                     <button onClick={() => toggleExpand(i.id)}

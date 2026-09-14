@@ -7,7 +7,7 @@ import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
-import { interactionIcon } from '../lib/interactions.js'
+import { interactionIcon, countsTowardRecency } from '../lib/interactions.js'
 import { groupMeetingsByGroupId, isScheduledMeeting } from '../lib/meetings.js'
 
 const DEFAULT_WIDTH = 150
@@ -208,6 +208,8 @@ export default function Contacts() {
   }
 
   // Latest interaction of ANY type per contact — used for the "days since last contact" stats.
+  // A sent message/mailing only counts once it's marked "הייתה תגובה" (see countsTowardRecency) —
+  // otherwise sending it would look like real contact even if no one ever replied.
   async function loadLastContactDates(contactIds) {
     if (contactIds.length === 0) return
     try {
@@ -220,6 +222,7 @@ export default function Contacts() {
       const map = {}
       const nonJournalMap = {}
       for (const row of data || []) {
+        if (!countsTowardRecency(row)) continue
         if (!map[row.contact_id]) map[row.contact_id] = row.created_at
         if (row.type !== 'journal' && !nonJournalMap[row.contact_id]) {
           nonJournalMap[row.contact_id] = {

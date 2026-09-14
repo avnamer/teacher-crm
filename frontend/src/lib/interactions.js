@@ -37,6 +37,22 @@ export function isBulkSent(interaction) {
   return wasBulkFlow && (interaction?.metadata?.recipient_count ?? 0) > 1
 }
 
+/** Is this a sent message (private or mailing-list), as opposed to a call/meeting/journal? */
+export function isSentMessage(interaction) {
+  return interaction?.type === 'message_sent' || interaction?.type === 'mailing_list'
+}
+
+/**
+ * Whether an interaction should count toward the "last contact" recency indicators
+ * (dashboard bucket coloring, "יומן קשר אחרון" column). Sending a message doesn't mean it
+ * reached anyone — only once someone has marked "הייתה תגובה" on it does it count as real
+ * contact. Every other interaction type (calls, meetings, journal entries) always counts.
+ */
+export function countsTowardRecency(interaction) {
+  if (!isSentMessage(interaction)) return true
+  return !!interaction?.metadata?.responded
+}
+
 /** Icon for a whole interaction row — accounts for how it was sent, not just its type. */
 export function interactionIcon(interaction) {
   if (isBulkSent(interaction)) return BULK_SEND_ICON

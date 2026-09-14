@@ -18,12 +18,19 @@ Phone / browser
             └── Google Calendar (meeting sync, event creation)
 ```
 
-Authentication and access control are being reworked (top item in
-[docs/TODO.md](TODO.md)); this section will be updated when that lands. Don't add new
-tables, policies, or backend endpoints without checking with the user first. Google OAuth
-tokens are already isolated: they live in the private `app_private` table (RLS on, no
-policy), reachable only by the backend's service key — never put secrets in a
-frontend-readable table.
+**Frontend auth (single-user).** The whole app is behind a Google login restricted to
+the owner: `AuthGate` requires a Supabase session whose email is the owner's before
+rendering anything (`frontend/src/components/AuthGate.jsx`, `pages/Login.jsx`,
+`lib/auth.js`). Every table's RLS is locked to that user
+(`"Owner full access"`: `auth.jwt() ->> 'email' = 'avnamer@gmail.com'`), so the public
+anon key can neither read nor write — verified live. The frontend email check is UX only;
+RLS is the authoritative gate. Google OAuth *Calendar* tokens live in the private
+`app_private` table (RLS on, no policy), reachable only by the backend's service key —
+never put secrets in a frontend-readable table.
+
+**Backend** is still unauthenticated (protected by CORS + the Anthropic spend limit);
+requiring a user JWT on the backend endpoints is a tracked follow-up. Don't add new
+tables or policies without an owner policy, and don't make any table publicly readable.
 
 ## Frontend (`frontend/`)
 
@@ -88,7 +95,9 @@ applied. Add new changes at the end; don't edit earlier statements.
 ## Environment variables
 
 **`frontend/.env.local`** (Netlify env vars in production)
-`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_BACKEND_URL`
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_BACKEND_URL`,
+`VITE_ALLOWED_EMAIL` (optional; the login-allowed owner email, defaults to
+`avnamer@gmail.com` — UX only, RLS is the real gate)
 
 **`backend/.env`** (Render env vars in production)
 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID`,

@@ -21,6 +21,10 @@
 | תאריך | פיצ'ר | PR | Spec | Plan |
 |---|---|---|---|---|
 | 2026-09-14 | בחירה חופשית של מורים (תיבות סימון) לשליחת WhatsApp | [#18](https://github.com/avnamer/teacher-crm/pull/18) | — | — |
+| 2026-09-14 | 🔒 שלב 1 אבטחה: התחברות משתמש-יחיד (Google) + נעילת RLS לכל הטבלאות | [#17](https://github.com/avnamer/teacher-crm/pull/17) | [spec](superpowers/specs/2026-09-14-supabase-auth-single-user-design.md) | [plan](superpowers/plans/2026-09-14-supabase-auth-single-user.md) |
+| 2026-09-14 | WhatsApp: צ'יפים למשתני תבנית, שליחה פר-מורה, תג רשימת תפוצה | [#16](https://github.com/avnamer/teacher-crm/pull/16) | — | — |
+| 2026-09-14 | סידור התיעוד: README, אינדקס, ARCHITECTURE, TODO, .env.example | [#15](https://github.com/avnamer/teacher-crm/pull/15) | — | — |
+| 2026-09-14 | 🔒 שלב 0 אבטחה: טוקני Google לטבלה פרטית + הגבלת CORS | [#14](https://github.com/avnamer/teacher-crm/pull/14) | — | — |
 | 2026-09-14 | תצוגת "בעוד X ימים" לפגישה עתידית (במקום ימים שליליים) | [#13](https://github.com/avnamer/teacher-crm/pull/13) | — | — |
 | 2026-09-14 | מחיקת פגישה (לכל המשתתפים) | [#12](https://github.com/avnamer/teacher-crm/pull/12) | [spec](superpowers/specs/2026-09-13-delete-meeting-design.md) | [plan](superpowers/plans/2026-09-13-delete-meeting.md) |
 | 2026-09-13 | עריכת תאריך ותוכן של פגישה | [#11](https://github.com/avnamer/teacher-crm/pull/11) | [spec](superpowers/specs/2026-09-13-edit-meeting-design.md) | [plan](superpowers/plans/2026-09-13-edit-meeting.md) |

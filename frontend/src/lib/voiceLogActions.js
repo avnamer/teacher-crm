@@ -14,7 +14,13 @@ export const ROUTES = [
   { value: 'new_task_column', label: '📋 משימה לכל המורים' },
 ]
 
-export { INTERACTION_TYPES as COMMUNICATION_TYPES } from './interactions.js'
+import { INTERACTION_TYPES } from './interactions.js'
+
+// The voice-log approval flow classifies a single recorded phone call — 'mailing_list'
+// is a bulk WhatsApp send and never applies here, so it's left out of this picker even
+// though it's a normal INTERACTION_TYPES entry everywhere else (dashboard icons, the
+// ContactDetail tagging dropdown).
+export const COMMUNICATION_TYPES = INTERACTION_TYPES.filter(t => t.value !== 'mailing_list')
 
 export async function ensureAdminContact() {
   const { data: existing, error: findErr } = await supabase

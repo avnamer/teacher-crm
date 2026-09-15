@@ -30,15 +30,21 @@ function schoolBucket(lastMeetingAt) {
   return 'red'
 }
 
-function groupCompletedBySchool(rows, contactsById) {
+// Buckets meeting groups (from groupMeetingsByGroupId) by every school represented
+// among their attendees — a meeting with attendees from two different schools
+// appears once under each, always showing every attendee's name, not just that
+// school's own attendees. Replaces the old per-row bucketing now that a meeting is
+// one group instead of one row per attendee.
+function groupMeetingsBySchool(meetingGroups) {
   const bySchool = {}
-  for (const row of rows) {
-    const contact = contactsById[row.contact_id]
-    const school = contact?.school || 'ללא בית ספר'
-    bySchool[school] ??= { school, rows: [], lastAt: null }
-    bySchool[school].rows.push({ ...row, teacherName: contact?.name || 'לא ידוע' })
-    if (!bySchool[school].lastAt || row.created_at > bySchool[school].lastAt) {
-      bySchool[school].lastAt = row.created_at
+  for (const group of meetingGroups) {
+    const schools = group.schools.length > 0 ? group.schools : ['ללא בית ספר']
+    for (const school of schools) {
+      bySchool[school] ??= { school, groups: [], lastAt: null }
+      bySchool[school].groups.push(group)
+      if (!bySchool[school].lastAt || group.date > bySchool[school].lastAt) {
+        bySchool[school].lastAt = group.date
+      }
     }
   }
   // Most-overdue school first — same convention this page already used for teachers.
@@ -46,8 +52,9 @@ function groupCompletedBySchool(rows, contactsById) {
 }
 
 // Content used to pre-fill an edit form for a meeting we only have as a group (the
-// upcoming-meetings list, which doesn't carry per-row content) — every row in a
-// group is expected to hold the same content, so the first one found is enough.
+// upcoming-meetings list, and now the past-meetings list too, since both render one
+// row per meeting group rather than one per attendee row) — every row in a group is
+// expected to hold the same content, so the first one found is enough.
 function firstRowContent(rowIds, meetings) {
   return meetings.find(m => rowIds.includes(m.id))?.content || ''
 }
@@ -218,6 +225,7 @@ export default function Meetings() {
   const [showAddMeetingModal, setShowAddMeetingModal] = useState(false)
   const [expandedBucket, setExpandedBucket] = useState(null)
   const [openSchool, setOpenSchool] = useState(null)
+  const [openMeetingId, setOpenMeetingId] = useState(null)
   const [editingGroupId, setEditingGroupId] = useState(null)
 
   useEffect(() => {
@@ -345,13 +353,8 @@ export default function Meetings() {
     contactsById
   ).sort((a, b) => new Date(a.date) - new Date(b.date))
 
-  // Every meeting (any status), grouped by meeting_group_id — used only to resolve
-  // "which row ids belong to this meeting" when an edit is opened, regardless of
-  // which section (past or upcoming) it was opened from.
-  const allGroups = groupMeetingsByGroupId(meetings, contactsById)
-  const groupById = Object.fromEntries(allGroups.map(g => [g.groupId, g]))
-
-  const bySchool = groupCompletedBySchool(completed, contactsById)
+  const completedGroups = groupMeetingsByGroupId(completed, contactsById)
+  const bySchool = groupMeetingsBySchool(completedGroups)
   const lastAtBySchool = Object.fromEntries(bySchool.map(g => [g.school, g.lastAt]))
   const allSchools = [...new Set(contacts.map(c => c.school).filter(Boolean))]
   const buckets = { green: [], orange: [], red: [] }
@@ -424,12 +427,12 @@ export default function Meetings() {
             {bySchool.length === 0 ? (
               <p className="text-gray-500 text-center py-8">אין פגישות שתועדו</p>
             ) : (
-              bySchool.map(group => {
-                const days = daysSince(group.lastAt)
-                const color = schoolBucket(group.lastAt)
-                const isOpen = openSchool === group.school
-                const sortedRows = [...group.rows].sort(
-                  (a, b) => new Date(b.created_at) - new Date(a.created_at)
+              bySchool.map(schoolEntry => {
+                const days = daysSince(schoolEntry.lastAt)
+                const color = schoolBucket(schoolEntry.lastAt)
+                const isOpen = openSchool === schoolEntry.school
+                const sortedMeetingGroups = [...schoolEntry.groups].sort(
+                  (a, b) => new Date(b.date) - new Date(a.date)
                 )
 
                 const borderClass =
@@ -443,19 +446,19 @@ export default function Meetings() {
                   'bg-green-400'
 
                 return (
-                  <div key={group.school} className={`rounded-xl border overflow-hidden ${borderClass}`}>
+                  <div key={schoolEntry.school} className={`rounded-xl border overflow-hidden ${borderClass}`}>
                     <button
-                      onClick={() => setOpenSchool(isOpen ? null : group.school)}
+                      onClick={() => setOpenSchool(isOpen ? null : schoolEntry.school)}
                       className="w-full flex items-center justify-between px-4 py-3 text-right"
                     >
                       <div className="flex items-center gap-3">
                         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dotClass}`} />
-                        <span className="font-medium text-gray-800">{group.school}</span>
+                        <span className="font-medium text-gray-800">{schoolEntry.school}</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-xs text-gray-500">לפני {days} ימים</span>
                         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                          {group.rows.length} פגישות
+                          {schoolEntry.groups.length} פגישות
                         </span>
                         <span className="text-gray-400 text-sm">{isOpen ? '▲' : '▼'}</span>
                       </div>
@@ -463,36 +466,48 @@ export default function Meetings() {
 
                     {isOpen && (
                       <div className="border-t border-gray-200 divide-y divide-gray-100">
-                        {sortedRows.map(row => {
-                          const groupId = row.metadata?.meeting_group_id || row.id
-                          const rowIds = groupById[groupId]?.rowIds || [row.id]
+                        {sortedMeetingGroups.map(meetingGroup => {
+                          const isMeetingOpen = openMeetingId === meetingGroup.groupId
                           return (
-                            <div key={row.id} className="px-4 py-3 bg-white">
-                              {editingGroupId === groupId ? (
+                            <div key={meetingGroup.groupId} className="px-4 py-3 bg-white">
+                              {editingGroupId === meetingGroup.groupId ? (
                                 <MeetingEditForm
-                                  initialDate={dateInputValue(row.created_at)}
-                                  initialContent={row.content || ''}
-                                  initialAttendeeIds={attendeeIdsForRows(rowIds, meetings)}
+                                  initialDate={dateInputValue(meetingGroup.date)}
+                                  initialContent={firstRowContent(meetingGroup.rowIds, meetings)}
+                                  initialAttendeeIds={attendeeIdsForRows(meetingGroup.rowIds, meetings)}
                                   teachers={contacts}
-                                  onSave={vals => saveMeetingEdit(rowIds, vals)}
+                                  onSave={vals => saveMeetingEdit(meetingGroup.rowIds, vals)}
                                   onCancel={() => setEditingGroupId(null)}
-                                  onDelete={() => deleteMeetingGroup(rowIds)}
+                                  onDelete={() => deleteMeetingGroup(meetingGroup.rowIds)}
                                 />
                               ) : (
                                 <>
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium text-blue-600">{row.teacherName}</span>
+                                  <div
+                                    onClick={() => setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)}
+                                    className="flex items-center justify-between cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-medium text-gray-800">{schoolEntry.school}</span>
+                                      <span className="text-sm font-medium text-blue-600">{meetingGroup.contactNames.join(', ')}</span>
+                                    </div>
                                     <div className="flex items-center gap-2">
                                       <span className="text-xs text-gray-400">
-                                        {new Date(row.created_at).toLocaleDateString('he-IL')}
+                                        {new Date(meetingGroup.date).toLocaleDateString('he-IL')}
                                       </span>
-                                      <button onClick={() => setEditingGroupId(groupId)}
-                                        className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">
+                                      <button
+                                        onClick={e => { e.stopPropagation(); setEditingGroupId(meetingGroup.groupId) }}
+                                        className="text-xs text-gray-400 hover:text-blue-600" title="ערוך"
+                                      >
                                         ✏️
                                       </button>
+                                      <span className="text-gray-400 text-sm">{isMeetingOpen ? '▲' : '▼'}</span>
                                     </div>
                                   </div>
-                                  {row.content && <p className="text-sm text-gray-600 mt-1">{row.content}</p>}
+                                  {isMeetingOpen && (
+                                    <p className="text-sm text-gray-600 mt-1">
+                                      {firstRowContent(meetingGroup.rowIds, meetings) || '—'}
+                                    </p>
+                                  )}
                                 </>
                               )}
                             </div>

@@ -20,6 +20,7 @@
 
 | תאריך | פיצ'ר | PR | Spec | Plan |
 |---|---|---|---|---|
+| 2026-09-15 | תיקון: אישור "משימה אישית לי" נכשל עם `null` ב-`type`; נעילת פורט 5173 ל-dev server | [#34](https://github.com/avnamer/teacher-crm/pull/34) | — | — |
 | 2026-09-14 | תיבת "הייתה תגובה" — הודעות/דיוור נספרים ב"קשר אחרון" רק אם סומנו | [#33](https://github.com/avnamer/teacher-crm/pull/33) | — | — |
 | 2026-09-14 | בחירה חופשית של מורים (תיבות סימון) לשליחת WhatsApp | [#18](https://github.com/avnamer/teacher-crm/pull/18) | — | — |
 | 2026-09-14 | 🔒 שלב 1 אבטחה: התחברות משתמש-יחיד (Google) + נעילת RLS לכל הטבלאות | [#17](https://github.com/avnamer/teacher-crm/pull/17) | [spec](superpowers/specs/2026-09-14-supabase-auth-single-user-design.md) | [plan](superpowers/plans/2026-09-14-supabase-auth-single-user.md) |

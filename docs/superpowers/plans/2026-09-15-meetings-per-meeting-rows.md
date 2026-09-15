@@ -1,3 +1,35 @@
+# One Row Per Meeting on the Meetings Page Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Inside an expanded school section on the Meetings page, show one row per real-world meeting (not one per attendee), with school + attendee names together on the row and content collapsed by default behind a per-meeting click-to-expand toggle.
+
+**Architecture:** `groupCompletedBySchool` (which bucketed individual attendee rows by school) is replaced by a function that buckets already-deduplicated meeting groups (from the existing `groupMeetingsByGroupId` helper) by every school represented among their attendees. The per-school section's inner list becomes a map over those meeting groups instead of raw rows, with a new `openMeetingId` state controlling per-meeting content visibility. `saveMeetingEdit`, `deleteMeetingGroup`, `MeetingEditForm`, and every other function are untouched — this is a pure rendering/grouping change.
+
+**Tech Stack:** React (Vite), Supabase JS client, Tailwind classes — matches the rest of the frontend. No automated test framework exists in this repo; manual browser verification is the actual "test" here.
+
+**Reference spec:** `docs/superpowers/specs/2026-09-15-meetings-per-meeting-rows-design.md`
+
+---
+
+## Before you start
+
+You're working in a dedicated git worktree, already on branch `feature/meetings-per-meeting-rows` (created off `main`, which already includes the merged edit-meeting-attendees feature) at `C:\Users\Avner\teacher-crm-worktrees\meetings-per-meeting-rows`. Stage specific files only when committing — never `git add -A`, since this repo may have other Claude Code sessions working in it concurrently.
+
+Run the app locally to verify. A prior session in this exact codebase found: (1) copy `frontend/.env.local` from the main checkout into this worktree so Vite can reach Supabase, (2) Supabase Auth's OAuth redirect-URL allowlist only includes `http://localhost:5173` — signing in on any other port silently redirects to the live production site instead, so the dev server for this verification MUST run on port 5173, and (3) check `netstat -ano | grep ":5173 "` before starting — if another Claude Code session (not your own leftover process) is already using it, do not kill it; ask for guidance instead.
+
+---
+
+### Task 1: Group past meetings by meeting instead of by attendee row
+
+**Files:**
+- Modify (full rewrite): `frontend/src/pages/Meetings.jsx`
+
+- [ ] **Step 1: Replace the entire file**
+
+Replace the full contents of `frontend/src/pages/Meetings.jsx` with:
+
+```jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
@@ -41,9 +73,6 @@ function groupMeetingsBySchool(meetingGroups) {
     const schools = group.schools.length > 0 ? group.schools : ['ללא בית ספר']
     for (const school of schools) {
       bySchool[school] ??= { school, groups: [], lastAt: null }
-      // Same object reference is shared across schools when a meeting spans more
-      // than one — safe only because nothing mutates a group in place; every
-      // change goes through loadAll()'s full re-fetch/re-derive instead.
       bySchool[school].groups.push(group)
       if (!bySchool[school].lastAt || group.date > bySchool[school].lastAt) {
         bySchool[school].lastAt = group.date
@@ -486,16 +515,7 @@ export default function Meetings() {
                               ) : (
                                 <>
                                   <div
-                                    role="button"
-                                    tabIndex={0}
                                     onClick={() => setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)}
-                                    onKeyDown={e => {
-                                      if (e.target !== e.currentTarget) return
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault()
-                                        setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)
-                                      }
-                                    }}
                                     className="flex items-center justify-between cursor-pointer"
                                   >
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -545,3 +565,75 @@ export default function Meetings() {
     </div>
   )
 }
+```
+
+- [ ] **Step 2: Lint the file**
+
+Run: `cd frontend && npx eslint src/pages/Meetings.jsx`
+Expected: no errors. (The underscore-prefixed destructure names in `saveMeetingEdit` are unchanged from the already-merged edit-meeting-attendees feature and already lint clean; this task's only new identifiers are `groupMeetingsBySchool`, `schoolEntry`, `sortedMeetingGroups`, `openMeetingId`, `isMeetingOpen`, `meetingGroup` — all used, none should trigger `no-unused-vars`.)
+
+- [ ] **Step 3: Manually verify in the browser + database**
+
+**Environment setup — read this first:**
+
+1. Copy `C:\Users\Avner\teacher-crm\frontend\.env.local` into this worktree at `C:\Users\Avner\teacher-crm-worktrees\meetings-per-meeting-rows\frontend\.env.local`.
+2. Check port 5173 (`netstat -ano | grep ":5173 "` then `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter 'ProcessId=<PID>' | Select-Object CommandLine"` to see whose process it is). If it belongs to another Claude Code session's worktree that isn't yours, report BLOCKED and ask before touching it. If it's free, or a leftover process from your own prior work in this same task, proceed (or ask if unsure whose it is).
+3. Run `cd frontend && npx vite --port 5173` from THIS worktree (background it, then `curl http://localhost:5173` to confirm it's up). Port 5173 specifically — Supabase Auth's OAuth redirect allowlist only includes that port; any other port silently bounces sign-in to the live production site instead.
+4. Open `http://localhost:5173` (Claude Browser pane tools: `navigate`, `computer`, `get_page_text`, `javascript_tool`, `find`, `read_page`). Ask the user to sign in with Google if not already signed in (verify via `get_page_text` showing real contact data, not a login screen) — do not attempt to script around this or use a service-role key.
+5. Once signed in, use authenticated Supabase REST calls via `javascript_tool` for test-data setup/cleanup (the same technique used successfully in two prior features in this codebase — read the actual `VITE_SUPABASE_ANON_KEY` value out of `frontend/.env.local`, build a small `sb()` fetch helper using the session token from `localStorage['sb-ltfguyjrwrcghllvrixu-auth-token']`), and the real UI for clicking through the actual feature. Re-create the `sb` helper after every full page reload — it doesn't survive navigation.
+
+**Always use throwaway test data** (names ending `__TEST__`, `custom_fields.mentor_name: 'אבנר'`, `role: 'מורה מוביל/ה'`) — never touch real contacts.
+
+**Scenario A — single-attendee meeting still renders correctly (no regression):**
+1. Create one test teacher (school "בית ספר בדיקה מיזוג"). Create one completed `interactions` row for them: `type: 'meeting'`, `content: 'תוכן בדיקה יחיד'`, `created_at` today, `metadata: { meeting_group_id: <uuid>, attendees: [] }`.
+2. Load `/meetings`, open this school's section. Confirm exactly one row appears, showing the school name and this teacher's name together on the same line, content collapsed (not shown) by default.
+3. Click the row (not the ✏️ or the outer school header). Confirm it expands and shows "תוכן בדיקה יחיד" exactly once, with a ▲ chevron. Click again — confirm it collapses.
+
+**Scenario B — multi-attendee meeting shows exactly one row, one edit form:**
+1. Create a second test teacher, same school. Create two `interactions` rows sharing one `meeting_group_id` (both completed, same `content`, same `created_at`, `attendees` cross-referencing each other's name), simulating a real multi-attendee meeting.
+2. Open the school section. Confirm **exactly one row** appears for this meeting (not two) — this is the core fix. Confirm the row shows both teachers' names joined with `, ` next to the school name.
+3. Click the row to expand — confirm the content appears exactly once (not duplicated).
+4. Click ✏️ on this row. Confirm **exactly one** `MeetingEditForm` appears (not two) — this directly verifies the previously-flagged duplicate-edit-form bug is resolved. Confirm both teachers appear pre-checked in the attendee picker.
+5. Change the content, save. Confirm the row's (collapsed→re-expanded) content reflects the change, and confirm via a direct Supabase query that both underlying rows were updated with the new content.
+
+**Scenario C — cross-school meeting appears once per school with full attendee list:**
+1. Create a third test teacher at a *different* school ("בית ספר בדיקה מיזוג 2"). Create a two-attendee meeting between this teacher and one of the teachers from Scenario B's school (shared `meeting_group_id`, both completed, same content/date).
+2. Confirm this meeting appears **once under each school's section** (open both), and in both places shows **both** attendees' names (not just the one from that section's own school).
+
+**Scenario D — school header meeting count reflects real meetings, not attendee rows:**
+1. Using the school from Scenario B (which now has one single-attendee meeting from Scenario A, one two-attendee meeting from Scenario B, and possibly the Scenario C meeting), confirm the school header's "N פגישות" badge count equals the number of distinct meetings for that school (e.g. 3), not the number of underlying `interactions` rows (which would be 4 — the two-attendee meeting counts as 1 meeting, 2 rows).
+
+**Scenario E — upcoming (scheduled) meetings list is unaffected:**
+1. Confirm the "פגישות עתידיות" section (if any scheduled meetings exist) still renders and behaves exactly as before this change — it already used `groupMeetingsByGroupId` and is untouched by this diff. A quick visual check is sufficient; this task made no code changes to that section.
+
+- [ ] **Step 4: Clean up test data**
+
+Delete every test `interactions` row and every test contact created above via Supabase, and stop any dev server process you started for this verification (never stop one you didn't start).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/src/pages/Meetings.jsx
+git commit -m "$(cat <<'EOF'
+Show one row per meeting instead of one per attendee
+
+Inside an expanded school section, past meetings are now grouped by
+meeting_group_id (via the existing groupMeetingsByGroupId helper)
+instead of listed one row per attendee. Each row shows the school
+name and every attendee's name together, with content collapsed by
+default behind a per-meeting click-to-expand toggle instead of being
+duplicated once per attendee. This also resolves a previously-flagged
+bug where editing a multi-attendee meeting rendered its edit form
+once per attendee row simultaneously — with one row per meeting,
+there's naturally only one place to click edit.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## After this plan
+
+Push `feature/meetings-per-meeting-rows` and open a PR against `main`, per this repo's own `CLAUDE.md` conventions (merging is the user's own action).

@@ -72,10 +72,15 @@ teacher IDs, the call's content/metadata, and the call's date:
    - For each selected teacher with no existing row in those groups: insert a new row
      with the target `meeting_group_id`, the same content/metadata, no
      `meeting_status`.
-4. After all writes, recompute `metadata.attendees` on every row now in the target
-   group (or the newly created group) to the current full teacher-name list minus
-   each row's own teacher — so a manually-added teacher is correctly reflected in
-   everyone else's attendee list, and vice versa.
+4. After all writes, recompute `metadata.attendees` on every row belonging to a
+   *selected* teacher (not every row in the pre-existing group) to the current full
+   selected-teacher-name list minus each row's own teacher — so a manually-added
+   teacher is correctly reflected in everyone else's attendee list, and vice versa. A
+   teacher who was part of the original scheduled meeting but got unchecked in the
+   picker is deliberately left untouched (still scheduled, unchanged attendees) —
+   unchecking means "didn't actually attend," so their own meeting stays open rather
+   than being silently marked complete or rewritten by an approval they weren't part
+   of.
 
 This reuses the existing group-wide-update pattern already established for meetings
 (`Meetings.jsx`'s `saveMeetingEdit`, the edit-meeting spec) rather than inventing a

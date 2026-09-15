@@ -490,6 +490,7 @@ export default function Meetings() {
                                     tabIndex={0}
                                     onClick={() => setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)}
                                     onKeyDown={e => {
+                                      if (e.target !== e.currentTarget) return
                                       if (e.key === 'Enter' || e.key === ' ') {
                                         e.preventDefault()
                                         setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)

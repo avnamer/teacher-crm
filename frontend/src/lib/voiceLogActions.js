@@ -123,7 +123,8 @@ export async function createCalendarEventsForActionItems(actionItems, targetName
 // consistent with the dateInputValue()-style helpers already used elsewhere in this
 // app (e.g. Meetings.jsx) for turning a stored timestamp back into "which day is this".
 function calendarDateStr(iso) {
-  return new Date(iso).toISOString().split('T')[0]
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // Scheduled-meeting interactions rows (metadata.meeting_status === 'scheduled') for
@@ -155,6 +156,7 @@ export async function findScheduledMeetingGroupContactIds(teacherId, referenceIs
   const { data, error } = await supabase
     .from('interactions')
     .select('contact_id')
+    .eq('type', 'meeting')
     .contains('metadata', { meeting_group_id: groupId })
   if (error) throw error
   return [...new Set((data || []).map(r => r.contact_id))]

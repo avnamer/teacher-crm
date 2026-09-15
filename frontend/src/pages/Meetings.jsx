@@ -41,6 +41,9 @@ function groupMeetingsBySchool(meetingGroups) {
     const schools = group.schools.length > 0 ? group.schools : ['ללא בית ספר']
     for (const school of schools) {
       bySchool[school] ??= { school, groups: [], lastAt: null }
+      // Same object reference is shared across schools when a meeting spans more
+      // than one — safe only because nothing mutates a group in place; every
+      // change goes through loadAll()'s full re-fetch/re-derive instead.
       bySchool[school].groups.push(group)
       if (!bySchool[school].lastAt || group.date > bySchool[school].lastAt) {
         bySchool[school].lastAt = group.date
@@ -483,7 +486,15 @@ export default function Meetings() {
                               ) : (
                                 <>
                                   <div
+                                    role="button"
+                                    tabIndex={0}
                                     onClick={() => setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        setOpenMeetingId(isMeetingOpen ? null : meetingGroup.groupId)
+                                      }
+                                    }}
                                     className="flex items-center justify-between cursor-pointer"
                                   >
                                     <div className="flex items-center gap-2 flex-wrap">

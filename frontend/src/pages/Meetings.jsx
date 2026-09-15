@@ -52,21 +52,44 @@ function firstRowContent(rowIds, meetings) {
   return meetings.find(m => rowIds.includes(m.id))?.content || ''
 }
 
+// The contact ids currently tagged on a meeting group, derived from its row ids —
+// used to pre-check the attendee picker regardless of which section (past or
+// upcoming) the edit was opened from.
+function attendeeIdsForRows(rowIds, meetings) {
+  return rowIds
+    .map(id => meetings.find(m => m.id === id)?.contact_id)
+    .filter(Boolean)
+}
+
 // ─── Inline edit form shared by both the past-meetings and upcoming-meetings lists ──
-function MeetingEditForm({ initialDate, initialContent, onSave, onCancel, onDelete }) {
+function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teachers, onSave, onCancel, onDelete }) {
   const [date, setDate] = useState(initialDate)
   const [content, setContent] = useState(initialContent)
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState(() => new Set(initialAttendeeIds))
   const [saving, setSaving] = useState(false)
   const isFuture = date > todayStr()
+
+  function toggleTeacher(id) {
+    setSelectedTeacherIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   async function handleSave() {
     if (!isFuture && !content.trim()) {
       alert('יש למלא את תוכן הפגישה')
       return
     }
+    if (selectedTeacherIds.size === 0) {
+      alert('יש לבחור לפחות מורה אחת שהשתתפה בפגישה')
+      return
+    }
     setSaving(true)
     try {
-      await onSave({ date, content, isFuture })
+      await onSave({ date, content, isFuture, teacherIds: [...selectedTeacherIds] })
     } finally {
       setSaving(false)
     }
@@ -102,6 +125,28 @@ function MeetingEditForm({ initialDate, initialContent, onSave, onCancel, onDele
         placeholder={isFuture ? 'ניתן להשאיר ריק ולהשלים אחרי הפגישה' : 'על מה דיברתם בפגישה?'}
         className="w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
       />
+      <div>
+        <p className="text-xs text-gray-500 mb-1">מורים שהשתתפו</p>
+        <div className="border rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
+          {teachers.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-2">אין מורים</p>
+          ) : (
+            teachers.map(t => (
+              <label key={t.id} className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={selectedTeacherIds.has(t.id)}
+                  onChange={() => toggleTeacher(t.id)}
+                  disabled={saving}
+                  className="w-3.5 h-3.5"
+                />
+                {t.name}
+              </label>
+            ))
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-1">{selectedTeacherIds.size} נבחרו</p>
+      </div>
       <div className="flex gap-2">
         <button onClick={handleSave} disabled={saving}
           className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
@@ -210,26 +255,68 @@ export default function Meetings() {
   }
 
   // Updates every row belonging to one real-world meeting at once (content, date,
-  // and — derived from the new date — whether it's scheduled or completed), then
-  // reloads so the recency banner / upcoming list / past list all stay consistent
-  // even when an edit moves a meeting between those sections.
-  async function saveMeetingEdit(rowIds, { date, content, isFuture }) {
+  // status derived from the new date), reconciles the attendee list against the
+  // group's current rows (add a row for a newly-checked teacher, hard-delete a row
+  // for an unchecked one), and recomputes metadata.attendees on every surviving/new
+  // row from the final selected set — then reloads so the recency banner / upcoming
+  // list / past list all stay consistent.
+  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds }) {
     const createdAt = new Date(`${date}T12:00:00`).toISOString()
+    const trimmedContent = content.trim() || null
     try {
       const { data: rows, error: fetchErr } = await supabase
         .from('interactions')
-        .select('id, metadata')
+        .select('id, contact_id, metadata')
         .in('id', rowIds)
       if (fetchErr) throw fetchErr
-      for (const row of rows) {
-        const { meeting_status, ...rest } = row.metadata || {}
-        const metadata = isFuture ? { ...rest, meeting_status: 'scheduled' } : rest
-        const { error } = await supabase
-          .from('interactions')
-          .update({ content: content.trim() || null, created_at: createdAt, metadata })
-          .eq('id', row.id)
+
+      const groupId = rows[0]?.metadata?.meeting_group_id || crypto.randomUUID()
+      const rowsByContact = Object.fromEntries(rows.map(r => [r.contact_id, r]))
+      const teachersById = Object.fromEntries(contacts.map(c => [c.id, c]))
+
+      for (const contactId of teacherIds) {
+        const attendees = teacherIds
+          .filter(id => id !== contactId)
+          .map(id => teachersById[id]?.name)
+          .filter(Boolean)
+        const existing = rowsByContact[contactId]
+        if (existing) {
+          const {
+            meeting_status: _meetingStatus,
+            meeting_group_id: _meetingGroupId,
+            attendees: _oldAttendees,
+            ...restMetadata
+          } = existing.metadata || {}
+          const metadata = {
+            ...restMetadata,
+            meeting_group_id: groupId,
+            attendees,
+            ...(isFuture ? { meeting_status: 'scheduled' } : {}),
+          }
+          const { error } = await supabase
+            .from('interactions')
+            .update({ content: trimmedContent, created_at: createdAt, metadata })
+            .eq('id', existing.id)
+          if (error) throw error
+        } else {
+          const metadata = {
+            meeting_group_id: groupId,
+            attendees,
+            ...(isFuture ? { meeting_status: 'scheduled' } : {}),
+          }
+          const { error } = await supabase
+            .from('interactions')
+            .insert({ contact_id: contactId, type: 'meeting', content: trimmedContent, created_at: createdAt, metadata })
+          if (error) throw error
+        }
+      }
+
+      const removedRowIds = rows.filter(r => !teacherIds.includes(r.contact_id)).map(r => r.id)
+      if (removedRowIds.length > 0) {
+        const { error } = await supabase.from('interactions').delete().in('id', removedRowIds)
         if (error) throw error
       }
+
       setEditingGroupId(null)
       await loadAll()
     } catch (err) {
@@ -303,6 +390,8 @@ export default function Meetings() {
                     <MeetingEditForm
                       initialDate={dateInputValue(g.date)}
                       initialContent={firstRowContent(g.rowIds, meetings)}
+                      initialAttendeeIds={attendeeIdsForRows(g.rowIds, meetings)}
+                      teachers={contacts}
                       onSave={vals => saveMeetingEdit(g.rowIds, vals)}
                       onCancel={() => setEditingGroupId(null)}
                       onDelete={() => deleteMeetingGroup(g.rowIds)}
@@ -383,6 +472,8 @@ export default function Meetings() {
                                 <MeetingEditForm
                                   initialDate={dateInputValue(row.created_at)}
                                   initialContent={row.content || ''}
+                                  initialAttendeeIds={attendeeIdsForRows(rowIds, meetings)}
+                                  teachers={contacts}
                                   onSave={vals => saveMeetingEdit(rowIds, vals)}
                                   onCancel={() => setEditingGroupId(null)}
                                   onDelete={() => deleteMeetingGroup(rowIds)}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   ROUTES,
   COMMUNICATION_TYPES,
@@ -7,6 +7,8 @@ import {
   addCustomColumnFromVoice,
   saveInteractionRow,
   createCalendarEventsForActionItems,
+  findScheduledMeetingGroupContactIds,
+  mergeOrCreateMeeting,
 } from '../lib/voiceLogActions.js'
 import { deletePendingVoiceLog } from '../lib/pendingVoiceLog.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
@@ -27,14 +29,48 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
+  const isMeeting = route === 'teacher_call' && communicationType === 'meeting'
+  const [selectedMeetingTeacherIds, setSelectedMeetingTeacherIds] = useState(() => new Set())
+  const [loadingMeetingDefaults, setLoadingMeetingDefaults] = useState(false)
+
+  // When the log is first classified (or reclassified) as a meeting, pre-check the
+  // AI-recognized teacher plus every co-attendee of any scheduled meeting they have
+  // on the same day this was recorded. The admin can still add/remove teachers below.
+  useEffect(() => {
+    if (!isMeeting) return
+    let cancelled = false
+    const primaryId = matchResult.certain?.id ?? teacherId
+    if (!primaryId) return
+    setLoadingMeetingDefaults(true)
+    findScheduledMeetingGroupContactIds(primaryId, item.created_at)
+      .then(groupIds => {
+        if (cancelled) return
+        setSelectedMeetingTeacherIds(new Set(groupIds.length ? groupIds : [primaryId]))
+      })
+      .catch(err => console.error('שגיאה בטעינת פגישה מתוכננת תואמת:', err))
+      .finally(() => { if (!cancelled) setLoadingMeetingDefaults(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMeeting])
+
+  function toggleMeetingTeacher(id) {
+    setSelectedMeetingTeacherIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   const filteredManual = manualSearch.trim()
     ? teachers.filter(t => t.name.includes(manualSearch.trim()))
     : []
 
   async function handleApprove() {
     if (!route) return alert('יש לבחור סוג תיעוד לפני האישור')
-    if (route === 'teacher_call' && !teacherId) return alert('יש לבחור מורה לפני האישור')
     if (route === 'teacher_call' && !communicationType) return alert('יש לבחור סוג אינטראקציה לפני האישור')
+    if (route === 'teacher_call' && !isMeeting && !teacherId) return alert('יש לבחור מורה לפני האישור')
+    if (isMeeting && selectedMeetingTeacherIds.size === 0) return alert('יש לבחור לפחות מורה אחת שהשתתפה בפגישה')
     if (route === 'new_task_column' && !columnLabel.trim()) return alert('יש להזין כותרת לעמודה')
 
     setSaving(true)
@@ -42,6 +78,27 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
     try {
       if (route === 'new_task_column') {
         await addCustomColumnFromVoice(columnLabel)
+      } else if (isMeeting) {
+        const teachersById = Object.fromEntries(teachers.map(t => [t.id, t]))
+        const teacherIds = [...selectedMeetingTeacherIds]
+        await mergeOrCreateMeeting({
+          teacherIds,
+          teachersById,
+          createdAt: item.created_at,
+          content: summary,
+          metadata: {
+            transcript: item.transcript,
+            action_items: item.action_items,
+            mentioned_dates: item.mentioned_dates,
+            teacher_name_spoken: item.teacher_name_spoken,
+            confirmed_by_user: true,
+            source: 'voice_pwa',
+            route,
+          },
+        })
+        const targetName = teacherIds.map(id => teachersById[id]?.name).filter(Boolean).join(', ')
+        const calendarWarning = await createCalendarEventsForActionItems(item.action_items, targetName, summary)
+        if (calendarWarning) alert(calendarWarning)
       } else {
         const targetContactId = route === 'admin_task' ? await ensureAdminContact() : teacherId
         if (route === 'admin_task' && !targetContactId) throw new Error('רשומת מנהל המערכת לא נמצאה — נסה לרענן את העמוד')
@@ -132,6 +189,60 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
 
       {route === 'teacher_call' && (
         <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">סוג האינטראקציה</label>
+          <div className="flex gap-2 flex-wrap">
+            {COMMUNICATION_TYPES.map(t => (
+              <button
+                key={t.value}
+                type="button"
+                disabled={saving}
+                onClick={() => setCommunicationType(t.value)}
+                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-60 ${
+                  communicationType === t.value
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+          {!communicationType && (
+            <p className="text-orange-600 text-xs mt-1">לא זוהה סוג אינטראקציה ברור מההקלטה — יש לבחור ידנית</p>
+          )}
+        </div>
+      )}
+
+      {isMeeting && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-600">מורים שהשתתפו בפגישה</label>
+            {loadingMeetingDefaults && <span className="text-xs text-gray-400">טוען פגישה מתוכננת...</span>}
+          </div>
+          <div className="border rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
+            {teachers.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-3">אין מורים</p>
+            ) : (
+              teachers.map(t => (
+                <label key={t.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={selectedMeetingTeacherIds.has(t.id)}
+                    onChange={() => toggleMeetingTeacher(t.id)}
+                    disabled={saving}
+                    className="w-4 h-4"
+                  />
+                  {t.name}
+                </label>
+              ))
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">{selectedMeetingTeacherIds.size} נבחרו</p>
+        </div>
+      )}
+
+      {route === 'teacher_call' && !isMeeting && (
+        <div>
           <label className="block text-sm font-medium text-gray-600 mb-1">מורה שזוהה</label>
           {matchResult.certain && teacherId === matchResult.certain.id && !overrideMatch ? (
             <div className="flex items-center gap-2">
@@ -182,32 +293,6 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
                 </select>
               )}
             </div>
-          )}
-        </div>
-      )}
-
-      {route === 'teacher_call' && (
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">סוג האינטראקציה</label>
-          <div className="flex gap-2 flex-wrap">
-            {COMMUNICATION_TYPES.map(t => (
-              <button
-                key={t.value}
-                type="button"
-                disabled={saving}
-                onClick={() => setCommunicationType(t.value)}
-                className={`px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-60 ${
-                  communicationType === t.value
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
-          {!communicationType && (
-            <p className="text-orange-600 text-xs mt-1">לא זוהה סוג אינטראקציה ברור מההקלטה — יש לבחור ידנית</p>
           )}
         </div>
       )}

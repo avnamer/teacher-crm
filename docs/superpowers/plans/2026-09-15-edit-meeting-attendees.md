@@ -1,3 +1,37 @@
+# Edit Meeting Attendees Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Let the mentor add or remove tagged teachers on an existing meeting directly from the Meetings page's inline edit form.
+
+**Architecture:** `MeetingEditForm` (in `frontend/src/pages/Meetings.jsx`) gains a teacher checkbox picker, pre-checked from the meeting's current attendees, matching the same visual pattern already used by `AddMeetingModal`'s own picker. Saving reconciles the selected teacher-id set against the group's existing `interactions` rows: teachers who stay checked get their row updated as today, newly-checked teachers get a new row inserted into the same `meeting_group_id`, and unchecked teachers have their row hard-deleted. `metadata.attendees` is recomputed on every surviving/new row from the final selected set.
+
+**Tech Stack:** React (Vite), Supabase JS client, Tailwind classes — matches the rest of the frontend. No automated test framework exists in this repo; manual browser + database verification is the actual "test" here, same as every prior meetings-related plan in this project.
+
+**Reference spec:** `docs/superpowers/specs/2026-09-15-edit-meeting-attendees-design.md`
+
+---
+
+## Before you start
+
+You're working in a dedicated git worktree, already on branch `feature/edit-meeting-attendees` (created off `main`) at `C:\Users\Avner\teacher-crm-worktrees\edit-meeting-attendees`. This branch does NOT include the (separate, still-unmerged) voice-log-meeting-merge feature — don't assume `mergeOrCreateMeeting` or its helpers exist in `frontend/src/lib/voiceLogActions.js` on this branch; this plan's attendee-reconciliation logic is self-contained inside `Meetings.jsx` and doesn't import anything from that file.
+
+Run the app locally to verify (see Task 1's verification step for exact instructions, including a Supabase Auth OAuth-redirect gotcha discovered in a prior session). Stage specific files only when committing — never `git add -A`, since this repo may have other Claude Code sessions working in it concurrently.
+
+You'll need at least two teacher contacts belonging to mentor "אבנר" already in the database, plus the ability to create your own throwaway test contacts/meetings and delete them afterward.
+
+---
+
+### Task 1: Add attendee editing to MeetingEditForm
+
+**Files:**
+- Modify (full rewrite): `frontend/src/pages/Meetings.jsx`
+
+- [ ] **Step 1: Replace the entire file**
+
+Replace the full contents of `frontend/src/pages/Meetings.jsx` with:
+
+```jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
@@ -518,3 +552,75 @@ export default function Meetings() {
     </div>
   )
 }
+```
+
+- [ ] **Step 2: Lint the file**
+
+Run: `cd frontend && npx eslint src/pages/Meetings.jsx`
+Expected: no errors. (The underscore-prefixed destructure names `_meetingStatus`/`_meetingGroupId`/`_oldAttendees` match this repo's `no-unused-vars` ignore pattern `^[A-Z_]` — already confirmed safe in a prior feature's lint check.)
+
+- [ ] **Step 3: Manually verify in the browser + database**
+
+**Environment setup (read this first — a prior session hit a real gotcha here):**
+
+1. Copy the main checkout's env file into this worktree so Vite can reach Supabase: `cp /c/Users/Avner/teacher-crm/frontend/.env.local /c/Users/Avner/teacher-crm-worktrees/edit-meeting-attendees/frontend/.env.local`
+2. Check what's currently running on port 5173 (`netstat -ano | grep ":5173 "` on Windows via the Bash tool, or equivalent) — if another Claude Code session's dev server is using it, do NOT kill it without asking the user first. If port 5173 is free, run the dev server from THIS worktree on port 5173 (`cd frontend && npx vite --port 5173`).
+3. **Why port 5173 specifically:** this Supabase project's Auth redirect-URL allowlist only includes `http://localhost:5173` (and the production URL) — signing in via Google OAuth on any other port silently redirects to the *live production site* instead of back to your local dev server. Using a different port (e.g. 5174) will NOT work for testing the login-gated UI.
+4. Open `http://localhost:5173` in a browser, sign in with Google (this requires a human — the app's only login path is real Google OAuth restricted to `avnamer@gmail.com`; don't attempt to script around it or use a service-role key to bypass Supabase's Row Level Security).
+5. Once signed in, you can drive the rest of this verification either by clicking through the UI directly, or by running authenticated Supabase REST calls from the browser's own JS console/`javascript_tool` using the session already in `localStorage` (key `sb-ltfguyjrwrcghllvrixu-auth-token`) — the same technique used successfully in the prior voice-log-meeting-merge feature's verification. Either approach is fine; using the REST-call technique for setup/cleanup and the real UI for the actual save action is fastest.
+
+**Scenario A — add a new attendee to an existing meeting:**
+1. Create two temporary test teacher contacts (e.g. names ending in `__TEST__` so they're easy to find and clean up later), tagged `custom_fields.mentor_name: 'אבנר'`, `role: 'מורה מוביל/ה'`.
+2. Create a single-attendee completed meeting for the first test teacher only: one `interactions` row, `type: 'meeting'`, `content` set to some test text, `created_at` today, `metadata: { meeting_group_id: <some uuid>, attendees: [] }` (no `meeting_status` key — it's completed).
+3. Load the Meetings page, find this school's section, expand it, click ✏️ on this meeting. Confirm the attendee checkbox list appears with only the first test teacher checked.
+4. Check the second test teacher's box too (now both checked), keep date/content as-is, click "שמור".
+5. Confirm the page reloads and the meeting now appears under **both** test teachers (check both their schools' sections, or the same section if same school).
+6. Query `interactions` directly: confirm there are now 2 rows sharing the same `meeting_group_id`, both with the same `content`/`created_at`, neither with a `meeting_status` key, and each row's `metadata.attendees` containing the *other* teacher's name.
+
+**Scenario B — remove an attendee from an existing meeting:**
+1. Using the same two-attendee meeting from Scenario A, open its edit form again (from either teacher's row — should resolve to the same group).
+2. Uncheck the second test teacher, click "שמור".
+3. Confirm the meeting now shows under only the first test teacher.
+4. Query `interactions`: confirm the second teacher's row is **completely gone** (not just unlinked — an actual `DELETE`), and the first teacher's row now has `metadata.attendees: []` (recomputed, since they're now the only attendee).
+
+**Scenario C — validation blocks removing every attendee:**
+1. Open the edit form for the single-attendee meeting left over from Scenario B.
+2. Uncheck the only checked teacher, click "שמור".
+3. Confirm an alert appears ("יש לבחור לפחות מורה אחת שהשתתפה בפגישה") and the row is NOT deleted/changed — verify via a fresh query that the row is unchanged.
+
+**Scenario D — works from the upcoming (scheduled) list too:**
+1. Create a scheduled meeting (future date, `meeting_status: 'scheduled'`) for the first test teacher only.
+2. In the "פגישות עתידיות" section, open its edit form, add the second test teacher, keep the date in the future, save.
+3. Confirm both test teachers now show this meeting as upcoming, and query `interactions` to confirm the new row also has `meeting_status: 'scheduled'` and correct `attendees`.
+
+- [ ] **Step 4: Clean up test data**
+
+Delete every test `interactions` row and both test contacts created above, directly via Supabase, and stop any dev server processes you started for this verification.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/src/pages/Meetings.jsx
+git commit -m "$(cat <<'EOF'
+Let the mentor edit which teachers are tagged on a meeting
+
+MeetingEditForm gains a teacher checkbox picker (matching
+AddMeetingModal's own pattern), pre-checked from the meeting's current
+attendees. Saving reconciles the selected set against the group's
+existing rows: a newly-checked teacher gets a new row in the same
+meeting_group_id, an unchecked teacher's row is hard-deleted, and
+metadata.attendees is recomputed on every surviving/new row — fixing
+attendee tagging that voice-recognition or manual entry got wrong at
+creation time, the same way voice-log approval already lets you
+correct which teacher the AI recognized.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## After this plan
+
+Push `feature/edit-meeting-attendees` and open a PR against `main`, per this repo's own `CLAUDE.md` conventions (merging is the user's own action — Claude Code's safety classifier blocks agents from merging PRs directly).

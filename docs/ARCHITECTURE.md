@@ -89,7 +89,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 |---|---|---|
 | Frontend | Netlify, site `comforting-pegasus-780af0` | Base `frontend`, build `npm run build`, publish `dist`. **Production branch: `main`**. Every production deploy costs credits (see [CLAUDE.md](../CLAUDE.md)) |
 | Backend | Render, service `teacher-crm-backend` (free) | `https://teacher-crm-backend.onrender.com`, root `backend`, start `npm start`. Spins down when idle (~30–50s cold start). Auto-deploy branch was originally `feature/mentors-page`; confirm in the Render dashboard that it now tracks `main` |
-| Database | Supabase project `teacher-crm` (ref `ltfguyjrwrcghllvrixu`) | Free tier auto-pauses; see the `run-teacher-crm` skill for resuming |
+| Database | Supabase project `teacher-crm` (ref `ltfguyjrwrcghllvrixu`) | Free tier auto-pauses; see the `run-teacher-crm` skill for resuming. Auth → URL Configuration → Redirect URLs must include the exact local dev URL (`http://localhost:5173/**`) or Google login silently redirects to the production Netlify site instead |
 | Google OAuth | Google Cloud client "Teacher-CRM" | Redirect URIs for localhost and Render. The consent screen shows "Onshape Academy" (cosmetic) |
 
 ## Environment variables

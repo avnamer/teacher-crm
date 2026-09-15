@@ -116,3 +116,88 @@ export async function createCalendarEventsForActionItems(actionItems, targetName
       ? 'השיחה נשמרה, אך יצירת האירועים ביומן נכשלה'
       : `השיחה נשמרה, אך ${calendarFailureCount} מתוך ${datedItems.length} אירועים ביומן לא נוצרו`
 }
+
+// ─── Voice-logged meeting merge ────────────────────────────────────────────
+
+// Same-day comparison uses the calendar date each created_at's ISO string carries —
+// consistent with the dateInputValue()-style helpers already used elsewhere in this
+// app (e.g. Meetings.jsx) for turning a stored timestamp back into "which day is this".
+function calendarDateStr(iso) {
+  return new Date(iso).toISOString().split('T')[0]
+}
+
+// Scheduled-meeting interactions rows (metadata.meeting_status === 'scheduled') for
+// the given contact ids, landing on the same calendar day as referenceIso. Used both
+// to default-select attendees when a voice log is first classified as a meeting, and
+// by mergeOrCreateMeeting to decide what to merge into.
+export async function findScheduledMeetingRows(contactIds, referenceIso) {
+  if (!contactIds?.length) return []
+  const { data, error } = await supabase
+    .from('interactions')
+    .select('id, contact_id, metadata, created_at')
+    .eq('type', 'meeting')
+    .contains('metadata', { meeting_status: 'scheduled' })
+    .in('contact_id', contactIds)
+  if (error) throw error
+  const day = calendarDateStr(referenceIso)
+  return (data || []).filter(row => calendarDateStr(row.created_at) === day)
+}
+
+// Given the one teacher the AI recognized as the voice log's subject, and the day it
+// was recorded, resolves every co-attendee of that teacher's pre-scheduled meeting
+// (if any) on that same day — used to pre-check the meeting-approval picker.
+export async function findScheduledMeetingGroupContactIds(teacherId, referenceIso) {
+  if (!teacherId) return []
+  const [ownRow] = await findScheduledMeetingRows([teacherId], referenceIso)
+  if (!ownRow) return []
+  const groupId = ownRow.metadata?.meeting_group_id
+  if (!groupId) return [teacherId]
+  const { data, error } = await supabase
+    .from('interactions')
+    .select('contact_id')
+    .contains('metadata', { meeting_group_id: groupId })
+  if (error) throw error
+  return [...new Set((data || []).map(r => r.contact_id))]
+}
+
+// Completes a voice-logged meeting for every selected teacher at once. If any of
+// them already has a scheduled-meeting row for the same calendar day, every selected
+// teacher's row converges onto that scheduled meeting's group (marking it complete);
+// teachers with no scheduled row yet get a fresh row added to that same group. If
+// none of them has a scheduled row at all, a brand-new group is created for exactly
+// this call — the same shape AddMeetingModal itself produces for a same-day meeting.
+export async function mergeOrCreateMeeting({ teacherIds, teachersById, createdAt, content, metadata }) {
+  const scheduledRows = await findScheduledMeetingRows(teacherIds, createdAt)
+  const rowsByContact = Object.fromEntries(scheduledRows.map(r => [r.contact_id, r]))
+  const targetGroupId = scheduledRows[0]?.metadata?.meeting_group_id || crypto.randomUUID()
+
+  for (const id of teacherIds) {
+    const attendees = teacherIds.filter(o => o !== id).map(o => teachersById[o]?.name).filter(Boolean)
+    const existing = rowsByContact[id]
+    if (existing) {
+      const {
+        meeting_status: _meetingStatus,
+        meeting_group_id: _meetingGroupId,
+        attendees: _oldAttendees,
+        ...restMetadata
+      } = existing.metadata || {}
+      const { error } = await supabase
+        .from('interactions')
+        .update({
+          content: content?.trim() || null,
+          metadata: { ...restMetadata, ...metadata, meeting_group_id: targetGroupId, attendees },
+        })
+        .eq('id', existing.id)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from('interactions').insert({
+        contact_id: id,
+        type: 'meeting',
+        content: content?.trim() || null,
+        created_at: createdAt,
+        metadata: { ...metadata, meeting_group_id: targetGroupId, attendees },
+      })
+      if (error) throw error
+    }
+  }
+}

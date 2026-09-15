@@ -50,7 +50,10 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
           : (teachers.find(t => t.id === teacherId)?.name || '')
         await saveInteractionRow({
           contactId: targetContactId,
-          type: communicationType,
+          // admin_task has no interaction-type picker (there's no "call/message/meeting"
+          // to classify for a personal task) — 'correspondence' is the closest existing
+          // type and keeps the not-null "type" column satisfied.
+          type: route === 'admin_task' ? 'correspondence' : communicationType,
           content: summary,
           metadata: {
             transcript: item.transcript,

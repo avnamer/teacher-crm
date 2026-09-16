@@ -38,7 +38,7 @@ tables or policies without an owner policy, and don't make any table publicly re
 |---|---|---|
 | `/contacts` | `Contacts.jsx` | Main dashboard: teacher table, column manager, recency stats, task counters, pending voice-log approvals, overdue scheduled meetings |
 | `/contacts/:id` | `ContactDetail.jsx` | Teacher detail, interaction/journal history |
-| `/meetings` | `Meetings.jsx` | Scheduled + past meetings (from `interactions`, `type='meeting'`), school recency, edit/delete |
+| `/meetings` | `Meetings.jsx` | Scheduled + past meetings (from `interactions`, `type='meeting'`), one row per real-world meeting (grouped by `meeting_group_id`), school recency, edit (date/content/attendees)/delete |
 | `/whatsapp` | `WhatsApp.jsx` | Templates, bulk send via send queue, task-based recipient filter |
 | `/voice-log` | `VoiceLog.jsx` | PWA voice dictation → AI analysis → `pending_voice_logs` |
 | `/mentors` | `Mentors.jsx` | Mentor directory |
@@ -51,7 +51,7 @@ copying them into pages:
 - `teachers.js`: `MENTOR` constant, "my teachers" and task-done predicates
 - `interactions.js`: interaction types, icons, labels
 - `whatsapp.js`: phone → E.164, template resolution, click-to-chat URL, send driver
-- `voiceLogActions.js`: save/approve logic for voice-log routes
+- `voiceLogActions.js`: save/approve logic for voice-log routes; `mergeOrCreateMeeting` folds an approved meeting voice-log into a same-day pre-scheduled meeting's `interactions` rows (or creates a fresh group) instead of writing a disconnected row
 
 ## Backend (`backend/`)
 
@@ -73,7 +73,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 | Table | Holds |
 |---|---|
 | `contacts` | Teachers (plus an admin pseudo-row, `custom_fields.is_admin_row`). `custom_fields` JSONB holds Monday data, task checkbox values, `mentor_name`, `_manual_edit` |
-| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` (meetings), `sent_via` / `recipient_count` (bulk WhatsApp), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
+| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` / `attendees` (meetings — one row per attendee per real-world meeting, all sharing one `meeting_group_id`; `attendees` lists the *other* attendees' names on each row), `sent_via` / `recipient_count` (bulk WhatsApp), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
 | `pending_voice_logs` | Unapproved voice-log analyses, scoped by `mentor_name` |
 | `settings` | Single row, **frontend-readable**: Monday board, working hours, `contacts_columns` (column config JSONB). Never store secrets here |
 | `app_private` | Secrets reachable only by the backend service key (RLS on, no policy): `google_calendar_tokens` |

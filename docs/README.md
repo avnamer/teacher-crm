@@ -20,6 +20,9 @@
 
 | תאריך | פיצ'ר | PR | Spec | Plan |
 |---|---|---|---|---|
+| 2026-09-16 | דף פגישות: שורה אחת לכל פגישה (במקום שורה לכל מורה) — שם בית ספר + כל המשתתפים באותה שורה, תוכן מוסתר עד לחיצה | [#37](https://github.com/avnamer/teacher-crm/pull/37) | [spec](superpowers/specs/2026-09-15-meetings-per-meeting-rows-design.md) | [plan](superpowers/plans/2026-09-15-meetings-per-meeting-rows.md) |
+| 2026-09-15 | עריכת המורים המתויגים בפגישה קיימת (הוספה/הסרה) | [#36](https://github.com/avnamer/teacher-crm/pull/36) | [spec](superpowers/specs/2026-09-15-edit-meeting-attendees-design.md) | [plan](superpowers/plans/2026-09-15-edit-meeting-attendees.md) |
+| 2026-09-15 | מיזוג תיעוד קולי של פגישה עם פגישה מתוכננת קיימת (במקום יצירת רשומה כפולה) | [#35](https://github.com/avnamer/teacher-crm/pull/35) | [spec](superpowers/specs/2026-09-15-voice-log-meeting-merge-design.md) | [plan](superpowers/plans/2026-09-15-voice-log-meeting-merge.md) |
 | 2026-09-15 | תיקון: אישור "משימה אישית לי" נכשל עם `null` ב-`type`; נעילת פורט 5173 ל-dev server | [#34](https://github.com/avnamer/teacher-crm/pull/34) | — | — |
 | 2026-09-14 | תיבת "הייתה תגובה" — הודעות/דיוור נספרים ב"קשר אחרון" רק אם סומנו | [#33](https://github.com/avnamer/teacher-crm/pull/33) | — | — |
 | 2026-09-14 | בחירה חופשית של מורים (תיבות סימון) לשליחת WhatsApp | [#18](https://github.com/avnamer/teacher-crm/pull/18) | — | — |

@@ -301,3 +301,13 @@ ALTER TABLE teacher_teams ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anon full access" ON contacts;
 DROP POLICY IF EXISTS "Anon full access" ON monday_tasks;
 DROP POLICY IF EXISTS "Anon full access" ON teacher_teams;
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: הוספת 'mailing_list' לסוגי אינטראקציה (הרץ פעם אחת)
+-- lib/interactions.js ו-SendQueueModal.jsx כותבים type: 'mailing_list' לכל שליחה
+-- קבוצתית מאז ש"רשימת דיוור" נוסף כסוג נפרד, אבל האילוץ בטבלה מעולם לא עודכן —
+-- כל שורת mailing_list נדחתה בשקט (הודעה נשלחה בפועל אך לא נרשמה ביומן).
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
+ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
+  CHECK (type IN ('message_sent', 'correspondence', 'meeting', 'phone_call', 'journal', 'mailing_list'));

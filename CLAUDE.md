@@ -111,6 +111,12 @@ session's work under your commit message.
   under the other session without warning, and kills any dev server they have
   running. If you need a different base, make a temporary worktree instead:
   `git worktree add <tmp-path> -b <branch> origin/main`.
+- **Hebrew/UTF-8 text passed as an inline shell argument on Windows can get silently
+  corrupted to `?` characters** (observed with `curl -d '{"school": "..."}'` against
+  the Supabase REST API — the request went through with no error, but the stored
+  value was garbled). Always write JSON payloads with non-ASCII content to a file
+  (e.g. via the Write tool, which preserves UTF-8) and send them with
+  `curl --data-binary @file.json` instead of an inline `-d`/`--data-raw` string.
 
 ### This has already happened, more than once
 
@@ -123,6 +129,11 @@ session's work under your commit message.
   pushed to PR #5 under a message that never mentioned it. Nothing was lost, but two
   unrelated features became coupled — reverting the WhatsApp work would also have
   reverted the counters, and the change shipped undocumented.
+- 2026-09-17: a session found itself on a stale, already-merged branch
+  (`docs/close-out-2026-09-16`) with new uncommitted work and switched straight to
+  `main` and back out to a fresh branch to fix it — violating the no-checkout rule
+  above. No harm resulted only because that stale branch happened to be idle. Use
+  `git worktree add` for this, every time, even when fixing your own stale branch.
 
 Nothing has been permanently lost in any of these, because the work was always
 recoverable. The real cost is coupling: it makes review, rollback, and "what shipped

@@ -24,6 +24,11 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   // against accumulated content (not the browser's result index, which
   // resets on restart) is what catches both that and simple re-fired repeats.
   const finalPhrasesRef = useRef([])
+  // After stop(), the engine can still fire one more onresult for audio it had
+  // already buffered (finalizing whatever was mid-utterance) — that event arrives
+  // asynchronously, after stop()'s caller has moved on, and would otherwise re-append
+  // the just-finished sentence. Ignore all results until start() is called again.
+  const stoppedRef = useRef(true)
 
   useEffect(() => {
     if (!supported) return
@@ -34,6 +39,7 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
     recognition.interimResults = true
 
     recognition.onresult = (event) => {
+      if (stoppedRef.current) return
       let interim = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript.trim()
@@ -81,6 +87,7 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
     // explicitly via reset() (see the "נקה" button and post-save reset).
     try {
       recognitionRef.current.start()
+      stoppedRef.current = false
       setListening(true)
     } catch {
       // Native SpeechRecognition throws if start() is called while already running
@@ -89,6 +96,7 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
   }, [listening])
 
   const stop = useCallback(() => {
+    stoppedRef.current = true
     recognitionRef.current?.stop()
     setListening(false)
   }, [])

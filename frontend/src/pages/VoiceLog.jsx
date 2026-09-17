@@ -11,13 +11,10 @@ export default function VoiceLog() {
   const { supported, listening, transcript, setTranscript, start, stop, reset, error: speechError } = useSpeechToText()
   const [teachers, setTeachers] = useState([])
   const [teachersError, setTeachersError] = useState(null)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [analyzeError, setAnalyzeError] = useState(null)
-  const [saveResult, setSaveResult] = useState(null) // { ok: true } | { ok: false, message }
-
-  useEffect(() => {
-    loadMyTeachers()
-  }, [])
+  // Queue of in-flight/finished analyze jobs, newest first. Each job carries its own
+  // transcript snapshot and status so a new recording (and the "סכם ושמור" click that
+  // follows it) never has to wait for an earlier job's network round-trip to finish.
+  const [jobs, setJobs] = useState([])
 
   async function loadMyTeachers() {
     const { data, error } = await supabase
@@ -32,19 +29,35 @@ export default function VoiceLog() {
     setTeachers((data || []).filter(c => c.custom_fields?.mentor_name === MENTOR))
   }
 
-  async function analyze() {
-    setAnalyzing(true)
-    setAnalyzeError(null)
-    setSaveResult(null)
+  useEffect(() => {
+    loadMyTeachers()
+  }, [])
+
+  function updateJob(id, patch) {
+    setJobs(prev => prev.map(j => (j.id === id ? { ...j, ...patch } : j)))
+  }
+
+  function removeJob(id) {
+    setJobs(prev => prev.filter(j => j.id !== id))
+  }
+
+  function markDone(id) {
+    updateJob(id, { status: 'done' })
+    // Auto-clear the confirmation row after a bit rather than piling up checkmarks
+    // while the mentor keeps dictating and saving more calls back to back.
+    setTimeout(() => removeJob(id), 4000)
+  }
+
+  async function runAnalyze(id, jobTranscript) {
     try {
       const result = await backendFetch('/api/voice-log/analyze', {
         method: 'POST',
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript: jobTranscript }),
       })
       const { certain } = matchTeacher(result.teacher_name_spoken, teachers)
       await insertPendingVoiceLog({
         mentor_name: MENTOR,
-        transcript,
+        transcript: jobTranscript,
         route: result.route === 'unclear' ? null : result.route,
         teacher_name_spoken: result.teacher_name_spoken || null,
         matched_contact_id: certain?.id ?? null,
@@ -54,24 +67,24 @@ export default function VoiceLog() {
         mentioned_dates: result.mentioned_dates || [],
         column_label: result.column_label || null,
       })
-      setSaveResult({ ok: true })
-      reset()
+      markDone(id)
     } catch (err) {
-      setAnalyzeError(err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message)
-    } finally {
-      setAnalyzing(false)
+      updateJob(id, {
+        status: 'error',
+        message: err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message,
+      })
     }
   }
 
   // Fallback when /analyze itself fails (e.g. no connectivity while traveling) — the
   // raw transcript is still saved as pending, with every classification field left
   // null, so the admin classifies it manually during approval instead of losing it.
-  async function saveTranscriptAsPending() {
-    setAnalyzeError(null)
+  async function saveJobAsPending(job) {
+    updateJob(job.id, { status: 'processing', message: null })
     try {
       await insertPendingVoiceLog({
         mentor_name: MENTOR,
-        transcript,
+        transcript: job.transcript,
         route: null,
         teacher_name_spoken: null,
         matched_contact_id: null,
@@ -81,19 +94,30 @@ export default function VoiceLog() {
         mentioned_dates: [],
         column_label: null,
       })
-      setSaveResult({ ok: true })
-      reset()
+      markDone(job.id)
     } catch (err) {
-      setSaveResult({
-        ok: false,
+      updateJob(job.id, {
+        status: 'error',
         message: 'שמירה נכשלה: ' + (err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message),
       })
     }
   }
 
+  // Snapshots the current transcript into its own job and clears the live transcript
+  // immediately (not after the network call resolves), so the mic is free to record
+  // the next message right away — the analyze/save work for this one keeps running
+  // in the background independently, and several jobs can be in flight at once.
+  function analyze() {
+    if (!transcript.trim()) return
+    const jobTranscript = transcript
+    stop()
+    reset()
+    const id = crypto.randomUUID()
+    setJobs(prev => [{ id, transcript: jobTranscript, status: 'processing', message: null }, ...prev])
+    runAnalyze(id, jobTranscript)
+  }
+
   function startNewCall() {
-    setAnalyzeError(null)
-    setSaveResult(null)
     start()
   }
 
@@ -138,39 +162,52 @@ export default function VoiceLog() {
       <div className="flex gap-3 justify-center">
         <button
           onClick={reset}
-          disabled={!transcript || analyzing}
+          disabled={!transcript}
           className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
         >
           נקה
         </button>
         <button
           onClick={analyze}
-          disabled={!transcript.trim() || analyzing}
+          disabled={!transcript.trim()}
           className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
         >
-          {analyzing ? 'שומר...' : 'סכם ושמור'}
+          סכם ושמור
         </button>
       </div>
 
-      {analyzeError && (
-        <div className="text-center space-y-2">
-          <p className="text-red-600">{analyzeError}</p>
-          <div className="flex gap-3 justify-center">
-            <button onClick={analyze} className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100">
-              נסה שוב
-            </button>
-            <button onClick={saveTranscriptAsPending} className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100">
-              שמור בלי סיכום
-            </button>
-          </div>
+      {jobs.length > 0 && (
+        <div className="space-y-2">
+          {jobs.map(job => (
+            <div key={job.id} className="border border-gray-200 rounded-lg p-3 text-right" dir="rtl">
+              <p className="text-sm text-gray-500 truncate">{job.transcript}</p>
+              {job.status === 'processing' && <p className="text-blue-600">שומר...</p>}
+              {job.status === 'done' && <p className="text-green-700">✓ נשמר, ממתין לאישור</p>}
+              {job.status === 'error' && (
+                <div className="space-y-2">
+                  <p className="text-red-600">{job.message}</p>
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => {
+                        updateJob(job.id, { status: 'processing', message: null })
+                        runAnalyze(job.id, job.transcript)
+                      }}
+                      className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100"
+                    >
+                      נסה שוב
+                    </button>
+                    <button
+                      onClick={() => saveJobAsPending(job)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100"
+                    >
+                      שמור בלי סיכום
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
-      )}
-
-      {saveResult?.ok && (
-        <p className="text-center text-green-700">✓ נשמר, ממתין לאישור</p>
-      )}
-      {saveResult && !saveResult.ok && (
-        <p className="text-center text-red-600">{saveResult.message}</p>
       )}
     </div>
   )

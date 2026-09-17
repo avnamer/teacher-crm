@@ -4,7 +4,6 @@ import { signOut } from '../lib/auth.js'
 
 const links = [
   { to: '/contacts', label: 'דשבורד', icon: '👥' },
-  { to: '/mentors', label: 'מנטורים', icon: '🧑‍🏫' },
   { to: '/whatsapp', label: 'WhatsApp', icon: '💬' },
   { to: '/meetings', label: 'פגישות', icon: '📅' },
   { to: '/voice-log', label: 'תיעוד שיחה', icon: '🎙' },

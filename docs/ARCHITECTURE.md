@@ -41,9 +41,12 @@ tables or policies without an owner policy, and don't make any table publicly re
 | `/meetings` | `Meetings.jsx` | Scheduled + past meetings (from `interactions`, `type='meeting'`), one row per real-world meeting (grouped by `meeting_group_id`), school recency, edit (date/content/attendees)/delete |
 | `/whatsapp` | `WhatsApp.jsx` | Templates, bulk send via send queue, task-based recipient filter |
 | `/voice-log` | `VoiceLog.jsx` | PWA voice dictation → AI analysis → `pending_voice_logs` |
-| `/mentors` | `Mentors.jsx` | Mentor directory |
 | `/settings` | `Settings.jsx` | Monday board, working hours, CSV import modal |
 | `/book/:contactId` | `BookMeeting.jsx` | Public booking page (outside the layout; uses legacy `meetings` table) |
+
+`Mentors.jsx` (mentor directory CRUD against the `mentors` table) still exists in
+`frontend/src/pages/` but is unlinked from the navbar and routing as of PR #44 — not
+needed at this stage, kept in case it's needed later.
 
 Shared modules in `frontend/src/lib/`. Put new cross-page definitions here instead of
 copying them into pages:

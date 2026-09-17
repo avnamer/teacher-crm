@@ -78,6 +78,10 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teac
   const [selectedTeacherIds, setSelectedTeacherIds] = useState(() => new Set(initialAttendeeIds))
   const [saving, setSaving] = useState(false)
   const isFuture = date > todayStr()
+  // A future-dated meeting that already has content is treated as having happened —
+  // the mentor filling in what was discussed is a stronger signal than the date
+  // field, which may simply not have been updated yet.
+  const willBeScheduled = isFuture && !content.trim()
 
   function toggleTeacher(id) {
     setSelectedTeacherIds(prev => {
@@ -99,7 +103,7 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teac
     }
     setSaving(true)
     try {
-      await onSave({ date, content, isFuture, teacherIds: [...selectedTeacherIds] })
+      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds] })
     } finally {
       setSaving(false)
     }
@@ -123,9 +127,14 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teac
         onChange={e => setDate(e.target.value)}
         className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
       />
-      {isFuture && (
+      {willBeScheduled && (
         <p className="text-xs text-purple-600">
           תאריך עתידי — הפגישה תסומן כמתוכננת
+        </p>
+      )}
+      {isFuture && !willBeScheduled && (
+        <p className="text-xs text-purple-600">
+          יש תוכן, אז הפגישה תסומן כמי שהתקיימה למרות שהתאריך עתידי
         </p>
       )}
       <textarea

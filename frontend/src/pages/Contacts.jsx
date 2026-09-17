@@ -428,6 +428,8 @@ export default function Contacts() {
     return matchSearch && matchGender && matchRole
   }).sort((a, b) => (isAdminRow(b) ? 1 : 0) - (isAdminRow(a) ? 1 : 0)) // pin admin row to the top
 
+  const schoolOptions = [...new Set(contacts.map(c => c.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'))
+
   // Contact-recency stats — always over "my teachers", regardless of the search/gender/showAll filters above.
   const myTeachers = contacts.filter(isMyTeacher)
   const buckets = { green: [], orange: [], red: [] }
@@ -825,6 +827,7 @@ export default function Contacts() {
       {/* Add Contact Modal */}
       {showAddModal && (
         <AddContactModal
+          schools={schoolOptions}
           onClose={() => setShowAddModal(false)}
           onSaved={() => { setShowAddModal(false); loadContacts() }}
         />
@@ -1675,7 +1678,38 @@ function EditContactModal({ contact, onClose, onSaved }) {
   )
 }
 
-function AddContactModal({ onClose, onSaved }) {
+function SchoolField({ schools, value, onChange }) {
+  const [addingNew, setAddingNew] = useState(false)
+
+  if (addingNew || (value && !schools.includes(value))) {
+    return (
+      <div className="flex gap-2">
+        <input placeholder="שם בית ספר חדש" autoFocus value={value}
+          onChange={e => onChange(e.target.value)}
+          className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+        {schools.length > 0 && (
+          <button type="button" onClick={() => { setAddingNew(false); onChange('') }}
+            className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm whitespace-nowrap">
+            בחר מרשימה
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <select value={value} onChange={e => {
+      if (e.target.value === '__new__') { setAddingNew(true); onChange(''); return }
+      onChange(e.target.value)
+    }} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+      <option value="">בית ספר</option>
+      {schools.map(s => <option key={s} value={s}>{s}</option>)}
+      <option value="__new__">+ הוסף בית ספר חדש</option>
+    </select>
+  )
+}
+
+function AddContactModal({ schools, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: '', email: '', phone: '', school: '', class_name: '',
     gender: 'male', hackathon_date: '', birthday: '',
@@ -1694,6 +1728,8 @@ function AddContactModal({ onClose, onSaved }) {
         ...form,
         hackathon_date: form.hackathon_date || null,
         birthday: form.birthday || null,
+        role: 'מורה',
+        custom_fields: { mentor_name: MENTOR },
       })
       if (error) throw error
       onSaved()
@@ -1718,9 +1754,8 @@ function AddContactModal({ onClose, onSaved }) {
           <input placeholder="מייל" type="email" value={form.email} dir="ltr"
             onChange={e => setForm({...form, email: e.target.value})}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-          <input placeholder="בית ספר" value={form.school}
-            onChange={e => setForm({...form, school: e.target.value})}
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+          <SchoolField schools={schools} value={form.school}
+            onChange={school => setForm({...form, school})} />
           <input placeholder="כיתה" value={form.class_name}
             onChange={e => setForm({...form, class_name: e.target.value})}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />

@@ -138,8 +138,10 @@ const MERGE_MEETINGS_PROMPT = `אתה עוזר שמאחד כמה רשומות ת
   "content": "תיעוד מאוחד ומלא של הפגישה, בגוף ראשון כמו הרשומות המקוריות, מחולק לפסקאות לפי נושא",
   "summary": "סיכום קצר של הפגישה, 2-3 משפטים",
   "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
-  "mentioned_dates": ["YYYY-MM-DD"]
+  "mentioned_dates": ["YYYY-MM-DD"],
+  "sources": [ { "record": 1, "taken": "משפט או שניים: איזה מידע מהרשומה הזו נכנס לתיעוד המאוחד, ומה ממנה הוחלף בפרט מעודכן מרשומה מאוחרת יותר (אם בכלל)" } ]
 }
+ב-"sources" החזר פריט אחד לכל רשומה, לפי המספר שלה. אם רשומה לא תרמה שום מידע חדש, כתוב זאת במפורש.
 תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].`
 
 export async function mergeMeetingNotes(notes, meetingDate) {
@@ -166,5 +168,6 @@ export async function mergeMeetingNotes(notes, meetingDate) {
     summary: parsed.summary ?? '',
     action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
+    sources: Array.isArray(parsed.sources) ? parsed.sources : [],
   }
 }

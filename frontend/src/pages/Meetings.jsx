@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher } from '../lib/teachers.js'
 import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
-import { analyzeManualMeeting, needsMeetingAnalysis, mergeSameDayMeetings } from '../lib/meetingAnalysis.js'
+import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
+import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -240,7 +241,7 @@ export default function Meetings() {
   const [openSchool, setOpenSchool] = useState(null)
   const [openMeetingId, setOpenMeetingId] = useState(null)
   const [editingGroupId, setEditingGroupId] = useState(null)
-  const [mergingGroupId, setMergingGroupId] = useState(null)
+  const [openMergeKey, setOpenMergeKey] = useState(null)
 
   useEffect(() => {
     loadAll()
@@ -315,6 +316,7 @@ export default function Meetings() {
             ...restMetadata,
             meeting_group_id: groupId,
             attendees,
+            saved_at: new Date().toISOString(),
             ...(isFuture ? { meeting_status: 'scheduled' } : {}),
           }
           const { error } = await supabase
@@ -327,6 +329,7 @@ export default function Meetings() {
           const metadata = {
             meeting_group_id: groupId,
             attendees,
+            saved_at: new Date().toISOString(),
             ...(isFuture ? { meeting_status: 'scheduled' } : {}),
           }
           const { data: inserted, error } = await supabase
@@ -360,28 +363,10 @@ export default function Meetings() {
           if (warning) alert(warning)
           loadAll()
         })
-      } else if (!isFuture) {
-        // Content unchanged, but the date may now coincide with another record of
-        // the same meeting.
-        mergeSameDayMeetings({ rowIds: finalRowIds }).then(({ merged, warning }) => {
-          if (warning) alert(warning)
-          if (merged) loadAll()
-        })
       }
     } catch (err) {
       alert('שגיאה בעדכון הפגישה: ' + err.message)
     }
-  }
-
-  // Existing same-day duplicates (recorded before merging happened on save) are merged
-  // on request from the school's meeting list. `rowIds` should be the day's latest
-  // record — its notes win where the records disagree.
-  async function mergeDuplicates(rowIds, groupId) {
-    setMergingGroupId(groupId)
-    const { warning } = await mergeSameDayMeetings({ rowIds })
-    setMergingGroupId(null)
-    if (warning) alert(warning)
-    await loadAll()
   }
 
   // Deletes every row belonging to one real-world meeting at once (all attendees),
@@ -406,6 +391,12 @@ export default function Meetings() {
   ).sort((a, b) => new Date(a.date) - new Date(b.date))
 
   const completedGroups = groupMeetingsByGroupId(completed, contactsById)
+  // Same-day records of one meeting, awaiting the admin's approve/reject (also shown
+  // on the dashboard).
+  const clusterByGroupId = {}
+  for (const cluster of findDuplicateMeetingClusters(meetings, contactsById)) {
+    for (const g of cluster.groups) clusterByGroupId[g.groupId] = cluster
+  }
   const bySchool = groupMeetingsBySchool(completedGroups)
   const lastAtBySchool = Object.fromEntries(bySchool.map(g => [g.school, g.lastAt]))
   const allSchools = [...new Set(contacts.map(c => c.school).filter(Boolean))]
@@ -520,11 +511,7 @@ export default function Meetings() {
                       <div className="border-t border-gray-200 divide-y divide-gray-100">
                         {sortedMeetingGroups.map(meetingGroup => {
                           const isMeetingOpen = openMeetingId === meetingGroup.groupId
-                          // sortedMeetingGroups is newest-first, so [0] is that day's latest record.
-                          const sameDayGroups = sortedMeetingGroups.filter(
-                            other => dateInputValue(other.date) === dateInputValue(meetingGroup.date)
-                          )
-                          const hasSameDayDuplicate = sameDayGroups.length > 1
+                          const mergeCluster = clusterByGroupId[meetingGroup.groupId]
                           return (
                             <div key={meetingGroup.groupId} className="px-4 py-3 bg-white">
                               {editingGroupId === meetingGroup.groupId ? (
@@ -557,14 +544,16 @@ export default function Meetings() {
                                       <span className="text-sm font-medium text-blue-600">{meetingGroup.contactNames.join(', ')}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {hasSameDayDuplicate && (
+                                      {mergeCluster && (
                                         <button
-                                          onClick={e => { e.stopPropagation(); mergeDuplicates(sameDayGroups[0].rowIds, meetingGroup.groupId) }}
-                                          disabled={mergingGroupId !== null}
-                                          className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50"
-                                          title="איחוד כל הפגישות מאותו יום לפגישה אחת עם סיכום AI"
+                                          onClick={e => {
+                                            e.stopPropagation()
+                                            setOpenMergeKey(k => (k === mergeCluster.key ? null : mergeCluster.key))
+                                          }}
+                                          className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                          title="הצעה לאיחוד כל הרשומות של הפגישה מאותו יום, עם סיכום AI"
                                         >
-                                          {mergingGroupId === meetingGroup.groupId ? 'מאחד...' : '🔀 אחד פגישות מאותו יום'}
+                                          🔀 אחד פגישות מאותו יום
                                         </button>
                                       )}
                                       <span className="text-xs text-gray-400">
@@ -583,6 +572,16 @@ export default function Meetings() {
                                     <p className="text-sm text-gray-600 mt-1">
                                       {firstRowContent(meetingGroup.rowIds, meetings) || '—'}
                                     </p>
+                                  )}
+                                  {/* Shown once per cluster, under its latest record. */}
+                                  {mergeCluster && openMergeKey === mergeCluster.key &&
+                                    mergeCluster.groups.at(-1).groupId === meetingGroup.groupId && (
+                                    <div className="mt-2">
+                                      <MeetingMergeProposal
+                                        cluster={mergeCluster}
+                                        onDone={() => { setOpenMergeKey(null); loadAll() }}
+                                      />
+                                    </div>
                                   )}
                                 </>
                               )}

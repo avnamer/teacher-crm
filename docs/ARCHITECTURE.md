@@ -63,6 +63,7 @@ copying them into pages:
 | `POST /api/google/create-event` | Create an event in the user's calendar (voice-log action items) |
 | `POST /api/voice-log/analyze` | Send a transcript to Claude and get back teacher/summary/action items/dates |
 | `POST /api/meetings/analyze` | Send manually typed meeting notes + meeting date to Claude; returns summary/action items/dates (frontend `lib/meetingAnalysis.js` writes them to every group row's `metadata`) |
+| `POST /api/meetings/merge` | Send several records of the same meeting (`notes[]`, oldest first) + date to Claude; returns one consolidated `content` + summary/action items/dates, later notes winning on conflict. Used by `mergeSameDayMeetings()` in `lib/meetingAnalysis.js`, which after any held-meeting save folds other held meetings on the same day sharing a school or attendee into one group |
 | `GET /api/whatsapp/status` | Active send driver + capabilities |
 | `POST /api/whatsapp/bulk-send` | Slot for a future `cloud_api` driver (manual click-to-chat needs no server) |
 
@@ -74,7 +75,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 | Table | Holds |
 |---|---|
 | `contacts` | Teachers (plus an admin pseudo-row, `custom_fields.is_admin_row`). `custom_fields` JSONB holds Monday data, task checkbox values, `mentor_name`, `_manual_edit` |
-| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` / `attendees` (meetings — one row per attendee per real-world meeting, all sharing one `meeting_group_id`; `attendees` lists the *other* attendees' names on each row), `sent_via` / `recipient_count` (bulk WhatsApp), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
+| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` / `attendees` (meetings — one row per attendee per real-world meeting, all sharing one `meeting_group_id`; `attendees` lists the *other* attendees' names on each row; `summary` / `ai_analyzed_content` from AI analysis; `merged_sources` = the original notes of same-day records merged into this meeting), `sent_via` / `recipient_count` (bulk WhatsApp), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
 | `pending_voice_logs` | Unapproved voice-log analyses, scoped by `mentor_name` |
 | `settings` | Single row, **frontend-readable**: Monday board, working hours, `contacts_columns` (column config JSONB). Never store secrets here |
 | `app_private` | Secrets reachable only by the backend service key (RLS on, no policy): `google_calendar_tokens` |

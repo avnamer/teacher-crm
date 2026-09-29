@@ -56,6 +56,7 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
         metadata: {
           attendees: selected.filter(o => o.id !== t.id).map(o => o.name),
           meeting_group_id: meetingGroupId,
+          saved_at: new Date().toISOString(),
           ...(isFuture ? { meeting_status: 'scheduled' } : {}),
         },
       }))

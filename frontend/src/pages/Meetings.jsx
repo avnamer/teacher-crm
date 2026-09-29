@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher } from '../lib/teachers.js'
 import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
+import { analyzeManualMeeting, needsMeetingAnalysis } from '../lib/meetingAnalysis.js'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -286,13 +287,15 @@ export default function Meetings() {
     try {
       const { data: rows, error: fetchErr } = await supabase
         .from('interactions')
-        .select('id, contact_id, metadata')
+        .select('id, contact_id, content, metadata')
         .in('id', rowIds)
       if (fetchErr) throw fetchErr
 
       const groupId = rows[0]?.metadata?.meeting_group_id || crypto.randomUUID()
       const rowsByContact = Object.fromEntries(rows.map(r => [r.contact_id, r]))
       const teachersById = Object.fromEntries(contacts.map(c => [c.id, c]))
+      const shouldAnalyze = !isFuture && needsMeetingAnalysis(rows[0], trimmedContent)
+      const finalRowIds = []
 
       for (const contactId of teacherIds) {
         const attendees = teacherIds
@@ -318,16 +321,20 @@ export default function Meetings() {
             .update({ content: trimmedContent, created_at: createdAt, metadata })
             .eq('id', existing.id)
           if (error) throw error
+          finalRowIds.push(existing.id)
         } else {
           const metadata = {
             meeting_group_id: groupId,
             attendees,
             ...(isFuture ? { meeting_status: 'scheduled' } : {}),
           }
-          const { error } = await supabase
+          const { data: inserted, error } = await supabase
             .from('interactions')
             .insert({ contact_id: contactId, type: 'meeting', content: trimmedContent, created_at: createdAt, metadata })
+            .select('id')
+            .single()
           if (error) throw error
+          finalRowIds.push(inserted.id)
         }
       }
 
@@ -339,6 +346,19 @@ export default function Meetings() {
 
       setEditingGroupId(null)
       await loadAll()
+
+      // Same AI summary + follow-up tasks a voice-logged meeting gets — in the
+      // background, so the edit form closes right away.
+      if (shouldAnalyze) {
+        analyzeManualMeeting({
+          rowIds: finalRowIds,
+          content: trimmedContent,
+          date,
+          attendeeNames: teacherIds.map(id => teachersById[id]?.name).filter(Boolean),
+        }).then(warning => {
+          if (warning) alert(warning)
+        })
+      }
     } catch (err) {
       alert('שגיאה בעדכון הפגישה: ' + err.message)
     }

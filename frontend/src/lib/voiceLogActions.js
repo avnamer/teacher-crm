@@ -122,7 +122,7 @@ export async function createCalendarEventsForActionItems(actionItems, targetName
 // Same-day comparison uses the calendar date each created_at's ISO string carries —
 // consistent with the dateInputValue()-style helpers already used elsewhere in this
 // app (e.g. Meetings.jsx) for turning a stored timestamp back into "which day is this".
-function calendarDateStr(iso) {
+export function calendarDateStr(iso) {
   const d = new Date(iso)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -168,10 +168,12 @@ export async function findScheduledMeetingGroupContactIds(teacherId, referenceIs
 // teachers with no scheduled row yet get a fresh row added to that same group. If
 // none of them has a scheduled row at all, a brand-new group is created for exactly
 // this call — the same shape AddMeetingModal itself produces for a same-day meeting.
+// Returns the ids of the meeting's rows.
 export async function mergeOrCreateMeeting({ teacherIds, teachersById, createdAt, content, metadata }) {
   const scheduledRows = await findScheduledMeetingRows(teacherIds, createdAt)
   const rowsByContact = Object.fromEntries(scheduledRows.map(r => [r.contact_id, r]))
   const targetGroupId = scheduledRows[0]?.metadata?.meeting_group_id || crypto.randomUUID()
+  const rowIds = []
 
   for (const id of teacherIds) {
     const attendees = teacherIds.filter(o => o !== id).map(o => teachersById[o]?.name).filter(Boolean)
@@ -191,15 +193,18 @@ export async function mergeOrCreateMeeting({ teacherIds, teachersById, createdAt
         })
         .eq('id', existing.id)
       if (error) throw error
+      rowIds.push(existing.id)
     } else {
-      const { error } = await supabase.from('interactions').insert({
+      const { data: inserted, error } = await supabase.from('interactions').insert({
         contact_id: id,
         type: 'meeting',
         content: content?.trim() || null,
         created_at: createdAt,
         metadata: { ...metadata, meeting_group_id: targetGroupId, attendees },
-      })
+      }).select('id').single()
       if (error) throw error
+      rowIds.push(inserted.id)
     }
   }
+  return rowIds
 }

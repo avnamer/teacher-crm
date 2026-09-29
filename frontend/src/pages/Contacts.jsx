@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
-import { analyzeManualMeeting, needsMeetingAnalysis } from '../lib/meetingAnalysis.js'
+import { analyzeManualMeeting, needsMeetingAnalysis, mergeSameDayMeetings } from '../lib/meetingAnalysis.js'
 import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
@@ -1025,6 +1025,11 @@ function ScheduledMeetingRow({ group, initialContent, onResolved, onAnalyzed }) 
         }).then(warning => {
           if (warning) alert(warning)
           onAnalyzed?.()
+        })
+      } else {
+        mergeSameDayMeetings({ rowIds: group.rowIds }).then(({ merged, warning }) => {
+          if (warning) alert(warning)
+          if (merged) onAnalyzed?.()
         })
       }
     } catch (err) {

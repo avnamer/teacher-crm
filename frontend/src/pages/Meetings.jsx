@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher } from '../lib/teachers.js'
 import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
-import { analyzeManualMeeting, needsMeetingAnalysis } from '../lib/meetingAnalysis.js'
+import { analyzeManualMeeting, needsMeetingAnalysis, mergeSameDayMeetings } from '../lib/meetingAnalysis.js'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -240,6 +240,7 @@ export default function Meetings() {
   const [openSchool, setOpenSchool] = useState(null)
   const [openMeetingId, setOpenMeetingId] = useState(null)
   const [editingGroupId, setEditingGroupId] = useState(null)
+  const [mergingGroupId, setMergingGroupId] = useState(null)
 
   useEffect(() => {
     loadAll()
@@ -357,11 +358,30 @@ export default function Meetings() {
           attendeeNames: teacherIds.map(id => teachersById[id]?.name).filter(Boolean),
         }).then(warning => {
           if (warning) alert(warning)
+          loadAll()
+        })
+      } else if (!isFuture) {
+        // Content unchanged, but the date may now coincide with another record of
+        // the same meeting.
+        mergeSameDayMeetings({ rowIds: finalRowIds }).then(({ merged, warning }) => {
+          if (warning) alert(warning)
+          if (merged) loadAll()
         })
       }
     } catch (err) {
       alert('שגיאה בעדכון הפגישה: ' + err.message)
     }
+  }
+
+  // Existing same-day duplicates (recorded before merging happened on save) are merged
+  // on request from the school's meeting list. `rowIds` should be the day's latest
+  // record — its notes win where the records disagree.
+  async function mergeDuplicates(rowIds, groupId) {
+    setMergingGroupId(groupId)
+    const { warning } = await mergeSameDayMeetings({ rowIds })
+    setMergingGroupId(null)
+    if (warning) alert(warning)
+    await loadAll()
   }
 
   // Deletes every row belonging to one real-world meeting at once (all attendees),
@@ -500,6 +520,11 @@ export default function Meetings() {
                       <div className="border-t border-gray-200 divide-y divide-gray-100">
                         {sortedMeetingGroups.map(meetingGroup => {
                           const isMeetingOpen = openMeetingId === meetingGroup.groupId
+                          // sortedMeetingGroups is newest-first, so [0] is that day's latest record.
+                          const sameDayGroups = sortedMeetingGroups.filter(
+                            other => dateInputValue(other.date) === dateInputValue(meetingGroup.date)
+                          )
+                          const hasSameDayDuplicate = sameDayGroups.length > 1
                           return (
                             <div key={meetingGroup.groupId} className="px-4 py-3 bg-white">
                               {editingGroupId === meetingGroup.groupId ? (
@@ -532,6 +557,16 @@ export default function Meetings() {
                                       <span className="text-sm font-medium text-blue-600">{meetingGroup.contactNames.join(', ')}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                      {hasSameDayDuplicate && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); mergeDuplicates(sameDayGroups[0].rowIds, meetingGroup.groupId) }}
+                                          disabled={mergingGroupId !== null}
+                                          className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50"
+                                          title="איחוד כל הפגישות מאותו יום לפגישה אחת עם סיכום AI"
+                                        >
+                                          {mergingGroupId === meetingGroup.groupId ? 'מאחד...' : '🔀 אחד פגישות מאותו יום'}
+                                        </button>
+                                      )}
                                       <span className="text-xs text-gray-400">
                                         {new Date(meetingGroup.date).toLocaleDateString('he-IL')}
                                       </span>
@@ -569,6 +604,7 @@ export default function Meetings() {
           teachers={contacts}
           onClose={() => setShowAddMeetingModal(false)}
           onSaved={() => { setShowAddMeetingModal(false); loadAll() }}
+          onAnalyzed={loadAll}
         />
       )}
     </div>

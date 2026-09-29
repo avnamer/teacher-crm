@@ -30,7 +30,13 @@ function normalizeRecurrence(recurrence, due_date) {
   return { type: 'monthly', day: Number(due_date.slice(8, 10)) }
 }
 
+// Rows typed in this panel (or spawned by a recurring task) hold nothing but their task,
+// so removing the last task can delete the row. Anything else — a recorded voice log —
+// keeps its content and summary; only its tasks are cleared.
+const PANEL_ONLY_SOURCES = new Set(['admin_panel', 'recurring'])
+
 function itemsOf(row) {
+  if (row.metadata?.tasks_cleared) return []
   const items = row.metadata?.action_items
   if (Array.isArray(items) && items.length > 0) return items
   const text = (row.content || '').trim()
@@ -76,15 +82,19 @@ async function updateItems(rowId, mutate) {
   if (loadErr) throw loadErr
   const items = mutate(itemsOf(row).map(i => ({ ...i })))
 
-  // Last task of the row removed — the row has nothing left to show, drop it entirely.
-  if (items.length === 0) {
+  // Last task of the row removed. A panel-only row has nothing else in it — drop it. A
+  // recording is kept (with its content) and flagged, so its summary doesn't come back
+  // as a task via the itemsOf fallback.
+  if (items.length === 0 && PANEL_ONLY_SOURCES.has(row.metadata?.source)) {
     const { error } = await supabase.from('interactions').delete().eq('id', rowId)
     if (error) throw error
     return
   }
   const { error } = await supabase
     .from('interactions')
-    .update({ metadata: { ...(row.metadata || {}), action_items: items } })
+    .update({
+      metadata: { ...(row.metadata || {}), action_items: items, ...(items.length === 0 && { tasks_cleared: true }) },
+    })
     .eq('id', rowId)
   if (error) throw error
 }

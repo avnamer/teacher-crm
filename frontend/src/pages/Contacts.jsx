@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
+import { analyzeManualMeeting, needsMeetingAnalysis } from '../lib/meetingAnalysis.js'
 import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
@@ -496,6 +497,7 @@ export default function Contacts() {
         onResolved={groupId => setScheduledMeetings(prev =>
           prev.filter(r => (r.metadata?.meeting_group_id || r.id) !== groupId)
         )}
+        onAnalyzed={loadContacts}
       />
 
       <TaskStats stats={taskStats} />
@@ -848,6 +850,7 @@ export default function Contacts() {
           teachers={myTeachers}
           onClose={() => setShowAddMeetingModal(false)}
           onSaved={() => { setShowAddMeetingModal(false); loadContacts() }}
+          onAnalyzed={loadContacts}
         />
       )}
     </div>
@@ -984,9 +987,11 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
 }
 
 // ─── Meetings needing an update (scheduled meetings whose date has passed) ──
-function ScheduledMeetingRow({ group, onResolved }) {
+function ScheduledMeetingRow({ group, initialContent, onResolved, onAnalyzed }) {
   const [editing, setEditing] = useState(false)
-  const [content, setContent] = useState('')
+  // Pre-filled with whatever was already written for this meeting (e.g. on the
+  // Meetings page) — what's in this box when "שמור" is pressed is what gets saved.
+  const [content, setContent] = useState(initialContent || '')
   const [saving, setSaving] = useState(false)
 
   async function markHeld() {
@@ -998,9 +1003,10 @@ function ScheduledMeetingRow({ group, onResolved }) {
     try {
       const { data: rows, error: fetchErr } = await supabase
         .from('interactions')
-        .select('id, metadata')
+        .select('id, content, metadata')
         .in('id', group.rowIds)
       if (fetchErr) throw fetchErr
+      const shouldAnalyze = needsMeetingAnalysis(rows[0], content)
       for (const row of rows) {
         const { meeting_status, ...rest } = row.metadata || {}
         const { error } = await supabase
@@ -1010,6 +1016,17 @@ function ScheduledMeetingRow({ group, onResolved }) {
         if (error) throw error
       }
       onResolved(group.groupId)
+      if (shouldAnalyze) {
+        analyzeManualMeeting({
+          rowIds: group.rowIds,
+          content,
+          date: new Date(group.date).toISOString().split('T')[0],
+          attendeeNames: group.contactNames,
+        }).then(warning => {
+          if (warning) alert(warning)
+          onAnalyzed?.()
+        })
+      }
     } catch (err) {
       alert('שגיאה בעדכון הפגישה: ' + err.message)
     } finally {
@@ -1090,7 +1107,7 @@ function ScheduledMeetingRow({ group, onResolved }) {
   )
 }
 
-function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolved }) {
+function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolved, onAnalyzed }) {
   const contactsById = Object.fromEntries(contacts.map(c => [c.id, c]))
   const groups = groupMeetingsByGroupId(rows, contactsById)
   if (groups.length === 0) return null
@@ -1115,7 +1132,13 @@ function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolve
       {expanded && (
         <ul className="mt-3 space-y-3">
           {groups.map(g => (
-            <ScheduledMeetingRow key={g.groupId} group={g} onResolved={onResolved} />
+            <ScheduledMeetingRow
+              key={g.groupId}
+              group={g}
+              initialContent={rows.find(r => g.rowIds.includes(r.id))?.content}
+              onResolved={onResolved}
+              onAnalyzed={onAnalyzed}
+            />
           ))}
         </ul>
       )}

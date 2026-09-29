@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { analyzeManualMeeting } from '../lib/meetingAnalysis.js'
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
 }
 
-export default function AddMeetingModal({ teachers, onClose, onSaved }) {
+export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed }) {
   const [date, setDate] = useState(todayStr)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [content, setContent] = useState('')
@@ -58,9 +59,22 @@ export default function AddMeetingModal({ teachers, onClose, onSaved }) {
           ...(isFuture ? { meeting_status: 'scheduled' } : {}),
         },
       }))
-      const { error } = await supabase.from('interactions').insert(rows)
+      const { data: inserted, error } = await supabase.from('interactions').insert(rows).select('id')
       if (error) throw error
       onSaved()
+      // A meeting that already happened gets the same AI summary + follow-up tasks a
+      // voice-logged one does. Runs after the modal closes so saving isn't held up by it.
+      if (!isFuture) {
+        analyzeManualMeeting({
+          rowIds: inserted.map(r => r.id),
+          content,
+          date,
+          attendeeNames: selected.map(t => t.name),
+        }).then(warning => {
+          if (warning) alert(warning)
+          onAnalyzed?.()
+        })
+      }
     } catch (err) {
       alert('שגיאה בשמירת הפגישה: ' + err.message)
     } finally {

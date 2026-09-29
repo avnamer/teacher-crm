@@ -62,6 +62,7 @@ copying them into pages:
 | `POST /api/google/sync-meetings` | Pull Google Calendar events into the legacy `meetings` table |
 | `POST /api/google/create-event` | Create an event in the user's calendar (voice-log action items) |
 | `POST /api/voice-log/analyze` | Send a transcript to Claude and get back teacher/summary/action items/dates |
+| `POST /api/meetings/analyze` | Send manually typed meeting notes + meeting date to Claude; returns summary/action items/dates (frontend `lib/meetingAnalysis.js` writes them to every group row's `metadata`) |
 | `GET /api/whatsapp/status` | Active send driver + capabilities |
 | `POST /api/whatsapp/bulk-send` | Slot for a future `cloud_api` driver (manual click-to-chat needs no server) |
 

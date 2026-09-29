@@ -2,6 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import googleRouter from './src/routes/google.js'
+import meetingsRouter from './src/routes/meetings.js'
 import voiceLogRouter from './src/routes/voiceLog.js'
 import whatsappRouter from './src/routes/whatsapp.js'
 
@@ -37,6 +38,7 @@ app.use(
 app.use(express.json())
 
 app.use('/api/google', googleRouter)
+app.use('/api/meetings', meetingsRouter)
 app.use('/api/voice-log', voiceLogRouter)
 app.use('/api/whatsapp', whatsappRouter)
 

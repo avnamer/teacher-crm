@@ -64,17 +64,40 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
     }
 
     recognition.onerror = (event) => {
-      if (event.error === 'not-allowed') {
-        setError('הגישה למיקרופון נחסמה — יש לאפשר הרשאת מיקרופון בהגדרות הדפדפן')
-      } else if (event.error !== 'no-speech') {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
+        // Fatal — don't let onend auto-restart into the same error forever.
+        stoppedRef.current = true
+        setError(event.error === 'audio-capture'
+          ? 'לא נמצא מיקרופון זמין'
+          : 'הגישה למיקרופון נחסמה — יש לאפשר הרשאת מיקרופון בהגדרות הדפדפן')
+      } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
         setError('שגיאת הכתבה: ' + event.error)
       }
     }
 
-    recognition.onend = () => setListening(false)
+    // Browsers end a recognition session on their own after a pause in speech or
+    // a max session length (~60s in Chrome), even with continuous = true. Until the
+    // user actually presses stop, restart transparently so a long recording doesn't
+    // need the mic button pressed again. finalPhrasesRef is content-deduplicated, so
+    // the new session's results append correctly.
+    recognition.onend = () => {
+      if (!stoppedRef.current) {
+        try {
+          recognition.start()
+          return
+        } catch {
+          // fall through to stopped state
+        }
+      }
+      stoppedRef.current = true
+      setListening(false)
+    }
 
     recognitionRef.current = recognition
-    return () => recognition.stop()
+    return () => {
+      stoppedRef.current = true
+      recognition.stop()
+    }
   }, [supported, lang])
 
   const start = useCallback(() => {

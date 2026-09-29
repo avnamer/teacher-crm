@@ -60,6 +60,12 @@ function compareDone(a, b) {
   return (b.done_at || b.created_at).localeCompare(a.done_at || a.created_at)
 }
 
+function deleteConfirmText(task) {
+  return task.recurrence && !task.done
+    ? `למחוק את המשימה החוזרת "${task.text}"? היא לא תחזור יותר בחודשים הבאים.`
+    : `למחוק את המשימה "${task.text}"?`
+}
+
 export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminContactCreated }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -135,6 +141,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
             <TaskForm
               initialText=""
               initialDue=""
+              initialRecurring={false}
               submitLabel="הוסף"
               busy={busyKey === 'new'}
               onCancel={() => setAdding(false)}
@@ -172,7 +179,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
                 })}
                 onToggle={() => run(task.key, () => setAdminTaskDone(task, true))}
                 onDelete={() => {
-                  if (confirm(`למחוק את המשימה "${task.text}"?`)) run(task.key, () => deleteAdminTask(task))
+                  if (confirm(deleteConfirmText(task))) run(task.key, () => deleteAdminTask(task))
                 }}
               />
             ))}
@@ -193,7 +200,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
                       editing={false}
                       onToggle={() => run(task.key, () => setAdminTaskDone(task, false))}
                       onDelete={() => {
-                        if (confirm(`למחוק את המשימה "${task.text}"?`)) run(task.key, () => deleteAdminTask(task))
+                        if (confirm(deleteConfirmText(task))) run(task.key, () => deleteAdminTask(task))
                       }}
                     />
                   ))}
@@ -207,6 +214,8 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
   )
 }
 
+const SOURCE_LABEL = { admin_panel: 'נוסף', recurring: '🔁 נוצר' }
+
 function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onToggle, onDelete }) {
   if (editing) {
     return (
@@ -214,6 +223,7 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
         <TaskForm
           initialText={task.text}
           initialDue={task.due_date || ''}
+          initialRecurring={!!task.recurrence}
           submitLabel="שמור"
           busy={busy}
           onCancel={onCancelEdit}
@@ -251,8 +261,13 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
               {formatDue(task.due_date)}
             </span>
           )}
+          {task.recurrence && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+              🔁 כל חודש ב-{task.recurrence.day}
+            </span>
+          )}
           <span className="text-xs text-gray-400">
-            {task.source === 'admin_panel' ? 'נוסף' : '🎙 הוקלט'} {new Date(task.created_at).toLocaleDateString('he-IL')}
+            {SOURCE_LABEL[task.source] || '🎙 הוקלט'} {new Date(task.created_at).toLocaleDateString('he-IL')}
           </span>
         </div>
       </div>
@@ -268,14 +283,16 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
   )
 }
 
-function TaskForm({ initialText, initialDue, submitLabel, busy, onCancel, onSubmit }) {
+function TaskForm({ initialText, initialDue, initialRecurring, submitLabel, busy, onCancel, onSubmit }) {
   const [text, setText] = useState(initialText)
   const [due, setDue] = useState(initialDue)
+  const [recurring, setRecurring] = useState(initialRecurring)
 
   function submit(e) {
     e.preventDefault()
     if (!text.trim()) return alert('יש להזין את תוכן המשימה')
-    onSubmit({ text, due_date: due || null })
+    if (recurring && !due) return alert('משימה חוזרת צריכה תאריך יעד — ממנו נקבע היום בחודש')
+    onSubmit({ text, due_date: due || null, recurrence: recurring ? { type: 'monthly' } : null })
   }
 
   return (
@@ -295,10 +312,18 @@ function TaskForm({ initialText, initialDue, submitLabel, busy, onCancel, onSubm
             className="border border-gray-300 rounded-lg px-2 py-1 text-sm" />
         </label>
         {due && (
-          <button type="button" onClick={() => setDue('')} className="text-xs text-gray-500 hover:underline">
+          <button type="button" onClick={() => { setDue(''); setRecurring(false) }} className="text-xs text-gray-500 hover:underline">
             ללא תאריך
           </button>
         )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className={`text-xs flex items-center gap-1.5 ${due ? 'text-gray-700' : 'text-gray-400'}`}
+          title={due ? '' : 'יש לבחור תאריך יעד קודם'}>
+          <input type="checkbox" checked={recurring} disabled={!due}
+            onChange={e => setRecurring(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
+          🔁 חוזר כל חודש{due ? ` ב-${Number(due.slice(8, 10))} לחודש` : ''}
+        </label>
         <div className="flex gap-2 mr-auto">
           <button type="button" onClick={onCancel} disabled={busy}
             className="px-3 py-1.5 rounded-lg text-sm border border-gray-300 text-gray-600 hover:bg-gray-50">

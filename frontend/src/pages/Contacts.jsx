@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
+import AdminTasksPanel from '../components/AdminTasksPanel.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
@@ -135,6 +136,7 @@ export default function Contacts() {
   const [duplicateMeetingsExpanded, setDuplicateMeetingsExpanded] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set()) // free-form checkbox selection, for the "send to selected" action
   const [showSelectedSend, setShowSelectedSend] = useState(false)
+  const [adminTasksReloadKey, setAdminTasksReloadKey] = useState(0) // bumped when a voice log is approved, so a new admin task shows up
 
   useEffect(() => {
     loadContacts()
@@ -479,8 +481,20 @@ export default function Contacts() {
         teachers={myTeachers}
         expanded={pendingVoiceLogsExpanded}
         onToggle={() => setPendingVoiceLogsExpanded(v => !v)}
-        onApproved={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
+        onApproved={id => {
+          setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))
+          // An approved "משימה אישית לי" may have just created the admin row — reload
+          // contacts so the panel gets its id, and reload the panel for the new task.
+          if (!contacts.some(isAdminRow)) loadContacts()
+          setAdminTasksReloadKey(k => k + 1)
+        }}
         onDeleted={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
+      />
+
+      <AdminTasksPanel
+        adminContactId={contacts.find(isAdminRow)?.id || null}
+        reloadKey={adminTasksReloadKey}
+        onAdminContactCreated={loadContacts}
       />
 
       <ContactStats

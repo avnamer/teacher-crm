@@ -124,3 +124,47 @@ export async function analyzeMeetingNotes(content, meetingDate) {
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
   }
 }
+
+// ─── Several records of the same meeting ───────────────────────────────────
+// The same real-world meeting can get logged more than once on the same day (typed in
+// twice, typed and also voice-logged, typed and later updated as a new entry). The
+// Meetings page merges those into one meeting; this consolidates their notes.
+const MERGE_MEETINGS_PROMPT = `אתה עוזר שמאחד כמה רשומות תיעוד של אותה פגישה שקיים מנטור של מורים בבית ספר. הרשומות נכתבו באותו יום, חלקן כפולות וחלקן מוסיפות או מעדכנות פרטים.
+
+הרשומות מסודרות מהישנה לחדשה. כשיש סתירה בין רשומות — הפרט ברשומה המאוחרת יותר הוא הנכון. אל תשמיט שום מידע ייחודי שמופיע רק ברשומה אחת, ואל תחזור על אותו מידע פעמיים.
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
+{
+  "content": "תיעוד מאוחד ומלא של הפגישה, בגוף ראשון כמו הרשומות המקוריות, מחולק לפסקאות לפי נושא",
+  "summary": "סיכום קצר של הפגישה, 2-3 משפטים",
+  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
+  "mentioned_dates": ["YYYY-MM-DD"]
+}
+תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].`
+
+export async function mergeMeetingNotes(notes, meetingDate) {
+  const numbered = notes.map((note, i) => `רשומה ${i + 1}:\n${note}`).join('\n\n---\n\n')
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: MERGE_MEETINGS_PROMPT,
+    messages: [{ role: 'user', content: `תאריך הפגישה: ${meetingDate}\n\n${numbered}` }],
+  })
+
+  const text = responseText(response)
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  if (!parsed.content?.trim()) throw new Error('Claude לא החזיר תיעוד מאוחד')
+
+  return {
+    content: parsed.content.trim(),
+    summary: parsed.summary ?? '',
+    action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
+  }
+}

@@ -12,6 +12,7 @@ import {
 } from '../lib/voiceLogActions.js'
 import { deletePendingVoiceLog } from '../lib/pendingVoiceLog.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
+import { mergeSameDayMeetings } from '../lib/meetingAnalysis.js'
 
 function formatRecordedAt(iso) {
   return new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })
@@ -81,7 +82,7 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
       } else if (isMeeting) {
         const teachersById = Object.fromEntries(teachers.map(t => [t.id, t]))
         const teacherIds = [...selectedMeetingTeacherIds]
-        await mergeOrCreateMeeting({
+        const meetingRowIds = await mergeOrCreateMeeting({
           teacherIds,
           teachersById,
           createdAt: item.created_at,
@@ -99,6 +100,10 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
         const targetName = teacherIds.map(id => teachersById[id]?.name).filter(Boolean).join(', ')
         const calendarWarning = await createCalendarEventsForActionItems(item.action_items, targetName, summary)
         if (calendarWarning) alert(calendarWarning)
+        // The same meeting may already be typed in for that day — fold them together.
+        mergeSameDayMeetings({ rowIds: meetingRowIds }).then(({ warning }) => {
+          if (warning) alert(warning)
+        })
       } else {
         const targetContactId = route === 'admin_task' ? await ensureAdminContact() : teacherId
         if (route === 'admin_task' && !targetContactId) throw new Error('רשומת מנהל המערכת לא נמצאה — נסה לרענן את העמוד')

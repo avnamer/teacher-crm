@@ -81,7 +81,13 @@ Expected: `undefined undefined`
 
 - [ ] **Step 2: Append the implementation**
 
-Append to `backend/src/services/claudeAnalyze.js`:
+Add to the imports at the top of `backend/src/services/claudeAnalyze.js`:
+
+```js
+import { normalizeText } from './whatsappDedup.js'
+```
+
+Then append to `backend/src/services/claudeAnalyze.js`:
 
 ```js
 // ─── Tasks inside a synced WhatsApp DM ─────────────────────────────────────
@@ -95,14 +101,15 @@ const WHATSAPP_TASKS_PROMPT = `אתה עוזר שמנתח התכתבות ווא�
 
 - "assignee": "teacher" — משהו שהמורה התבקש/ה לעשות או התחייב/ה לעשות.
 - "assignee": "admin" — משהו שאבנר התבקש לעשות או התחייב לעשות.
-- "message_date" — התאריך (YYYY-MM-DD) של ההודעה שממנה עלתה המשימה, כפי שמופיע בסוגריים בתחילת השורה.
-- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (חשב יחסית ל-message_date), אחרת null.
+- "message_date" — התאריך (YYYY-MM-DD) של ההודעה שממנה עלתה המשימה, כפי שמופיע בסוגריים בתחילת השורה (אחריו מופיעים היום בשבוע והשעה).
+- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (חשב יחסית ל-message_date, והיעזר ביום בשבוע שמופיע בשורה עבור ביטויים כמו "ביום שלישי"), אחרת null.
 - "done": true רק אם הודעה מאוחרת יותר בהתכתבות מראה במפורש שהמשימה בוצעה (למשל "שלחתי", "קיבלתי, תודה"). אחרת false.
+- "🎤" בתחילת הודעה = תמלול של הודעה קולית; טקסט כמו [תמונה] או [מסמך: ...] = קובץ או מדיה שנשלחו.
 - נסח כל משימה קצר וברור, בעברית, בלי שם המבצע בתחילתה.
 - אל תחזיר משימה שכבר מופיעה ברשימת "משימות שכבר קיימות".
 
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
-{ "tasks": [ { "assignee": "teacher" | "admin", "text": "תיאור המשימה", "message_date": "YYYY-MM-DD", "due_date": "YYYY-MM-DD" | null, "done": false } ] }
+{ "tasks": [ { "assignee": "teacher" | "admin", "text": "תיאור המשימה", "message_date": "YYYY-MM-DD", "due_date": "YYYY-MM-DD" | null, "done": true | false } ] }
 אם אין משימות, החזר { "tasks": [] }.`
 
 const VALID_ASSIGNEES = new Set(['teacher', 'admin'])
@@ -113,7 +120,7 @@ export function normalizeWhatsAppTasks(parsed, allowedDates) {
   const allowed = new Set(allowedDates)
   return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
     .filter(t => VALID_ASSIGNEES.has(t?.assignee))
-    .filter(t => typeof t.text === 'string' && t.text.trim())
+    .filter(t => typeof t.text === 'string' && normalizeText(t.text)) // drops emoji/punctuation-only text
     .filter(t => allowed.has(t.message_date))
     .map(t => ({
       assignee: t.assignee,
@@ -167,6 +174,7 @@ import('dotenv/config').then(() => import('./src/services/claudeAnalyze.js')).th
     { assignee: 'someone', text: 'x', message_date: '2026-09-24' },
     { assignee: 'teacher', text: '', message_date: '2026-09-24' },
     { assignee: 'teacher', text: 'y', message_date: '2026-01-01' },
+    { assignee: 'teacher', text: '👍!!', message_date: '2026-09-24' },
   ] }, ['2026-09-24'])
   a.deepEqual(out, [
     { assignee: 'teacher', text: 'לשלוח טופס', message_date: '2026-09-24', due_date: '2026-09-28', done: false },
@@ -209,6 +217,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const israelTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false,
 })
+// "יום ה׳" / "שבת" — lets Claude resolve "ביום שלישי" without computing weekdays from a bare date.
+const israelWeekday = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'short' })
 
 function messageBody(m) {
   if (m.kind === 'voice') return m.transcript ? `🎤 ${m.transcript}` : ''
@@ -216,7 +226,7 @@ function messageBody(m) {
   return m.text || ''
 }
 
-/** Pure: prompt lines "[YYYY-MM-DD HH:MM] name: text", oldest first, empty messages dropped. */
+/** Pure: prompt lines "[YYYY-MM-DD <weekday> HH:MM] name: text", oldest first, empty messages dropped. */
 export function formatMessagesForPrompt(messages, teacherName) {
   const lines = []
   const dates = new Set()
@@ -226,7 +236,8 @@ export function formatMessagesForPrompt(messages, teacherName) {
     const day = israelDateStr(m.timestamp)
     dates.add(day)
     const who = m.sender === 'me' ? 'אבנר' : teacherName
-    lines.push(`[${day} ${israelTime.format(new Date(m.timestamp))}] ${who}: ${body}`)
+    const at = new Date(m.timestamp)
+    lines.push(`[${day} ${israelWeekday.format(at)} ${israelTime.format(at)}] ${who}: ${body}`)
   }
   return { conversation: lines.join('\n'), messageDates: [...dates] }
 }
@@ -253,7 +264,7 @@ import('dotenv/config').then(() => import('./src/services/whatsappTasks.js')).th
     { timestamp: '2026-09-30T14:26:00.000Z', sender: 'me', kind: 'voice', transcript: '' },
     { timestamp: '2026-09-30T15:56:00.000Z', sender: 'me', kind: 'text', text: 'שלחתי' },
   ], 'דודי יעקב')
-  a.equal(conversation, '[2026-09-24 15:08] דודי יעקב: מה נשמע?\n[2026-09-24 15:11] דודי יעקב: 🎤 תשלח לי את הטופס\n[2026-09-30 18:56] אבנר: שלחתי')
+  a.equal(conversation, '[2026-09-24 יום ה׳ 15:08] דודי יעקב: מה נשמע?\n[2026-09-24 יום ה׳ 15:11] דודי יעקב: 🎤 תשלח לי את הטופס\n[2026-09-30 יום ד׳ 18:56] אבנר: שלחתי')
   a.deepEqual(messageDates, ['2026-09-24', '2026-09-30'])
   a.equal(m.isDuplicateTask({ assignee: 'teacher', text: 'לשלוח את הטופס.' }, [{ assignee: 'teacher', text: 'לשלוח את הטופס' }]), true)
   a.equal(m.isDuplicateTask({ assignee: 'admin', text: 'לשלוח את הטופס' }, [{ assignee: 'teacher', text: 'לשלוח את הטופס' }]), false)
@@ -502,8 +513,11 @@ In `backend/src/services/whatsappMerge.js`:
    ```js
    saved += acceptedNow.length
    savedMessages.push(...acceptedNow)
+   // A voice message whose transcript only arrived on this retry is new text too —
+   // without this, a task said in it would never be extracted.
+   savedMessages.push(...replacements.filter(r => r.transcriptionStatus === 'done'))
    ```
-4. Replace the final `return { saved, duplicatesSkipped }` with `return { saved, duplicatesSkipped, savedMessages }`, and add to the JSDoc above the function: `savedMessages` = the messages actually inserted (not duplicates, not voice replacements) — used to trigger task extraction.
+4. Replace the final `return { saved, duplicatesSkipped }` with `return { saved, duplicatesSkipped, savedMessages }`, and add to the JSDoc above the function: `savedMessages` = the messages actually inserted, plus voice messages whose transcript was completed on this sync (not duplicates) — used to trigger task extraction.
 
 - [ ] **Step 2: Fire extraction in the route**
 

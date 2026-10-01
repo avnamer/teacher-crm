@@ -67,6 +67,7 @@ export async function fetchAdminTasks(adminContactId) {
       next_row_id: item.next_row_id || null,
       created_at: row.created_at,
       source: row.metadata?.source || null,
+      whatsapp_contact_name: row.metadata?.whatsapp_contact_name || null,
     }))
   )
 }

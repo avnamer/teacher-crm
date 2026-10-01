@@ -244,14 +244,14 @@ export default function Contacts() {
     }
   }
 
-  // Unresolved action items extracted from phone-call voice logs — surfaced as a follow-up indicator.
+  // Unresolved action items from phone-call voice logs and synced WhatsApp chats — surfaced as a follow-up indicator.
   async function loadPendingTasks(contactIds) {
     if (contactIds.length === 0) return
     try {
       const { data, error } = await supabase
         .from('interactions')
         .select('contact_id, metadata')
-        .eq('type', 'phone_call')
+        .in('type', ['phone_call', 'whatsapp'])
         .in('contact_id', contactIds)
       if (error) throw error
       const map = {}

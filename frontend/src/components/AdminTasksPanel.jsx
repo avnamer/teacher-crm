@@ -267,7 +267,10 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
             </span>
           )}
           <span className="text-xs text-gray-400">
-            {SOURCE_LABEL[task.source] || '🎙 הוקלט'} {new Date(task.created_at).toLocaleDateString('he-IL')}
+            {task.source === 'whatsapp'
+              ? `💬 וואטסאפ · ${task.whatsapp_contact_name || ''}`
+              : (SOURCE_LABEL[task.source] || '🎙 הוקלט')}{' '}
+            {new Date(task.created_at).toLocaleDateString('he-IL')}
           </span>
         </div>
       </div>

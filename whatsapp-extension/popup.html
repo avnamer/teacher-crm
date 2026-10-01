@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>סנכרון וואטסאפ</title>
+  <style>
+    body { font-family: system-ui, sans-serif; width: 260px; padding: 16px; margin: 0; }
+    h1 { font-size: 15px; margin: 0 0 12px; }
+    button { width: 100%; padding: 10px; border: none; border-radius: 8px; background: #2563eb; color: white; font-size: 14px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    p { font-size: 12px; color: #555; margin: 10px 0 0; }
+    a { color: #2563eb; }
+    .error { color: #b91c1c; }
+    .ok { color: #15803d; }
+  </style>
+</head>
+<body>
+  <h1>💬 סנכרון וואטסאפ</h1>
+  <button id="syncBtn">סנכרן עכשיו</button>
+  <p id="status"></p>
+  <p id="tabStatus" style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 10px;"></p>
+  <p><a href="options.html" target="_blank">הגדרות התוסף</a></p>
+  <script src="popup.js"></script>
+</body>
+</html>

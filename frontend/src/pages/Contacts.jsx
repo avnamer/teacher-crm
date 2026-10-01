@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
+import WhatsAppSyncBanner from '../components/WhatsAppSyncBanner.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
@@ -497,6 +498,8 @@ export default function Contacts() {
           prev.filter(r => (r.metadata?.meeting_group_id || r.id) !== groupId)
         )}
       />
+
+      <WhatsAppSyncBanner />
 
       <TaskStats stats={taskStats} />
 
@@ -1596,6 +1599,8 @@ function EditContactModal({ contact, onClose, onSaved }) {
     gender: contact.gender || 'male',
     hackathon_date: contact.hackathon_date?.split('T')[0] || '',
     birthday: contact.birthday?.split('T')[0] || '',
+    whatsappSync: contact.custom_fields?.whatsappSync || false,
+    whatsappGroupAliases: contact.custom_fields?.whatsappGroupAliases || '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -1607,13 +1612,19 @@ function EditContactModal({ contact, onClose, onSaved }) {
     }
     setSaving(true)
     try {
+      const { whatsappSync, whatsappGroupAliases, ...coreFields } = form
       const { error } = await supabase
         .from('contacts')
         .update({
-          ...form,
+          ...coreFields,
           hackathon_date: form.hackathon_date || null,
           birthday: form.birthday || null,
-          custom_fields: { ...(contact.custom_fields || {}), _manual_edit: true },
+          custom_fields: {
+            ...(contact.custom_fields || {}),
+            _manual_edit: true,
+            whatsappSync,
+            whatsappGroupAliases,
+          },
         })
         .eq('id', contact.id)
       if (error) throw error
@@ -1661,6 +1672,23 @@ function EditContactModal({ contact, onClose, onSaved }) {
             <input type="date" value={form.birthday}
               onChange={e => setForm({...form, birthday: e.target.value})}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+          </div>
+          <div className="border-t pt-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={form.whatsappSync}
+                onChange={e => setForm({...form, whatsappSync: e.target.checked})}
+                className="w-4 h-4" />
+              💬 סנכרן וואטסאפ
+            </label>
+            {form.whatsappSync && (
+              <div>
+                <label className="text-sm text-gray-500">שם/כינוי בקבוצות וואטסאפ</label>
+                <input value={form.whatsappGroupAliases}
+                  onChange={e => setForm({...form, whatsappGroupAliases: e.target.value})}
+                  placeholder="אם ריק — משתמשים בשם המורה. אפשר כמה כינויים מופרדים בפסיק"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+            )}
           </div>
           <div className="flex gap-2 pt-2">
             <button type="submit" disabled={saving}

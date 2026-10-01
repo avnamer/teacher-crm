@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { INTERACTION_TYPES, interactionIcon, interactionLabel, isSentMessage } from '../lib/interactions.js'
+import WhatsAppMessageList from '../components/WhatsAppMessageList.jsx'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -61,6 +62,30 @@ export default function ContactDetail() {
 
   async function saveContact() {
     try {
+      // Confirmed live (2026-09-29/30): this form only ever edits whatsappSync
+      // and whatsappGroupAliases within custom_fields. Spreading the whole of
+      // form.custom_fields (loaded once at page mount) blindly overwrote
+      // fields an entirely separate process manages out-of-band — specifically
+      // the sync's own whatsappLastMessageAt/whatsappLastGroupMessageAt
+      // cursors, which the backend advances server-side during a sync. If the
+      // contact page had been open (even just sitting there) since before a
+      // sync ran, saving ANY edit reverted those cursors to their stale
+      // page-load value, silently making the sync think old messages were
+      // never read. Re-fetching custom_fields fresh right before merging in
+      // just the two fields this form actually edits avoids clobbering
+      // anything else, known or not.
+      const { data: freshContact, error: fetchErr } = await supabase
+        .from('contacts')
+        .select('custom_fields')
+        .eq('id', id)
+        .single()
+      if (fetchErr) throw fetchErr
+      const custom_fields = {
+        ...(freshContact.custom_fields || {}),
+        whatsappSync: form.custom_fields?.whatsappSync,
+        whatsappGroupAliases: form.custom_fields?.whatsappGroupAliases,
+        _manual_edit: true,
+      }
       const { error } = await supabase
         .from('contacts')
         .update({
@@ -72,11 +97,11 @@ export default function ContactDetail() {
           gender: form.gender,
           hackathon_date: form.hackathon_date || null,
           birthday: form.birthday || null,
-          custom_fields: { ...(form.custom_fields || {}), _manual_edit: true },
+          custom_fields,
         })
         .eq('id', id)
       if (error) throw error
-      setContact(form)
+      setContact({ ...form, custom_fields })
       setEditing(false)
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message)
@@ -147,9 +172,29 @@ export default function ContactDetail() {
       if (error) throw error
       setInteractions(prev => prev.filter(x => x.id !== i.id))
       if (editingInteractionId === i.id) cancelEditInteraction()
+      // A whatsapp row's own cursor (whatsappLastMessageAt / per-group cursor)
+      // stays on the contact after the row is gone — confirmed live: without
+      // clearing it, the next sync thinks everything up to that timestamp is
+      // already saved and never re-reads the messages that were just deleted.
+      if (i.type === 'whatsapp') await clearWhatsAppCursor(i.metadata)
     } catch (err) {
       alert('שגיאה במחיקה: ' + err.message)
     }
+  }
+
+  async function clearWhatsAppCursor(metadata) {
+    const fields = contact.custom_fields || {}
+    let nextFields
+    if (metadata?.source === 'group' && metadata?.group_id) {
+      const { [metadata.group_id]: _removed, ...restGroupCursors } = fields.whatsappLastGroupMessageAt || {}
+      nextFields = { ...fields, whatsappLastGroupMessageAt: restGroupCursors }
+    } else {
+      const { whatsappLastMessageAt: _removed, ...rest } = fields
+      nextFields = rest
+    }
+    const { error } = await supabase.from('contacts').update({ custom_fields: nextFields }).eq('id', contact.id)
+    if (error) { console.error('Error clearing whatsapp cursor:', error); return }
+    setContact(prev => ({ ...prev, custom_fields: nextFields }))
   }
 
   async function saveInteractionContent(i) {
@@ -239,6 +284,23 @@ export default function ContactDetail() {
               onChange={v => setForm({...form, hackathon_date: v})} type="date" />
             <Field label="יום הולדת" value={form.birthday?.split('T')[0] || ''}
               onChange={v => setForm({...form, birthday: v})} type="date" />
+            <div className="md:col-span-2 border-t pt-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={!!form.custom_fields?.whatsappSync}
+                  onChange={e => setForm({...form, custom_fields: {...form.custom_fields, whatsappSync: e.target.checked}})}
+                  className="w-4 h-4" />
+                💬 סנכרן וואטסאפ
+              </label>
+              {form.custom_fields?.whatsappSync && (
+                <div>
+                  <label className="text-sm text-gray-500">שם/כינוי בקבוצות וואטסאפ</label>
+                  <input value={form.custom_fields?.whatsappGroupAliases || ''}
+                    onChange={e => setForm({...form, custom_fields: {...form.custom_fields, whatsappGroupAliases: e.target.value}})}
+                    placeholder="אם ריק — משתמשים בשם המורה. אפשר כמה כינויים מופרדים בפסיק"
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-4">
@@ -345,6 +407,18 @@ export default function ContactDetail() {
                             <button onClick={cancelEditInteraction}
                               className="px-2 py-1 border rounded text-xs hover:bg-gray-100">
                               ביטול
+                            </button>
+                          </div>
+                        </div>
+                      ) : i.type === 'whatsapp' && i.metadata?.messages?.length > 0 ? (
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <WhatsAppMessageList metadata={i.metadata} />
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => deleteInteraction(i)}
+                              className="text-xs text-gray-400 hover:text-red-600" title="מחק אינטראקציה">
+                              🗑️
                             </button>
                           </div>
                         </div>

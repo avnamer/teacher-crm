@@ -20,6 +20,10 @@
 
 | תאריך | פיצ'ר | PR | Spec | Plan |
 |---|---|---|---|---|
+| 2026-09-29 | קוביית "המשימות שלי" בדשבורד (משימות אישיות של המנהל מהקלטות ומהוספה ידנית) + משימות חוזרות חודשיות | [#50](https://github.com/avnamer/teacher-crm/pull/50) | — | — |
+| 2026-09-29 | איחוד פגישות כפולות רק באישור: באנר בדשבורד עם פירוט מה נלקח מכל רשומה | [#49](https://github.com/avnamer/teacher-crm/pull/49) | — | — |
+| 2026-09-29 | איחוד פגישות כפולות מאותו יום עם סיכום AI מאוחד | [#48](https://github.com/avnamer/teacher-crm/pull/48) | — | — |
+| 2026-09-29 | ניתוח AI לפגישות ידניות + תיקוני הקלטה (הקלטה רציפה, תשובה ריקה מ-Claude) | [#47](https://github.com/avnamer/teacher-crm/pull/47) | — | — |
 | 2026-09-17 | תיקון: אילוץ סוג האינטראקציה בטבלה לא כלל 'mailing_list', ולכן כל שליחה קבוצתית נכשלה בשקט ולא נרשמה ביומן המורה | [#45](https://github.com/avnamer/teacher-crm/pull/45) | — | — |
 | 2026-09-17 | תיעוד קולי: "סכם ושמור" מנקה את ההקלטה מיד ומעבד ברקע — אפשר להקליט הודעה הבאה בלי לחכות לניתוח הקודם, וכמה הודעות מתועדות במקביל | [#41](https://github.com/avnamer/teacher-crm/pull/41) | — | — |
 | 2026-09-16 | דף פגישות: שורה אחת לכל פגישה (במקום שורה לכל מורה) — שם בית ספר + כל המשתתפים באותה שורה, תוכן מוסתר עד לחיצה | [#37](https://github.com/avnamer/teacher-crm/pull/37) | [spec](superpowers/specs/2026-09-15-meetings-per-meeting-rows-design.md) | [plan](superpowers/plans/2026-09-15-meetings-per-meeting-rows.md) |

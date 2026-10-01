@@ -32,6 +32,21 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 const VALID_ROUTES = new Set(['teacher_call', 'admin_task', 'new_task_column', 'unclear'])
 const VALID_COMMUNICATION_TYPES = new Set(['phone_call', 'message_sent', 'correspondence', 'meeting'])
 
+// claude-sonnet-5 thinks (adaptive) by default, and thinking tokens count against
+// max_tokens. With a long transcript, a small cap was used up entirely by thinking,
+// leaving no text block at all ("תשובה ריקה"). Keep this generous.
+const MAX_TOKENS = 16000
+
+function responseText(response) {
+  const text = response.content?.find(block => block.type === 'text')?.text
+  if (!text) {
+    if (response.stop_reason === 'max_tokens') throw new Error('התשובה מ-Claude נקטעה (ארוכה מדי) — נסה לקצר את הטקסט')
+    if (response.stop_reason === 'refusal') throw new Error('Claude סירב לנתח את הטקסט')
+    throw new Error('תשובה ריקה מ-Claude')
+  }
+  return text
+}
+
 function extractJson(text) {
   const trimmed = text.trim()
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -41,15 +56,14 @@ function extractJson(text) {
 export async function analyzeCallTranscript(transcript) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-5',
-    max_tokens: 1024,
+    max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: transcript }],
   })
 
   // claude-sonnet-5 can return a leading `thinking` block before the `text`
   // block, so the text isn't reliably at content[0] — find it by type instead.
-  const text = response.content?.find(block => block.type === 'text')?.text
-  if (!text) throw new Error('תשובה ריקה מ-Claude')
+  const text = responseText(response)
 
   let parsed
   try {
@@ -69,5 +83,91 @@ export async function analyzeCallTranscript(transcript) {
     action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
     column_label: parsed.column_label ?? null,
+  }
+}
+
+// ─── Manually typed meeting notes ──────────────────────────────────────────
+// A meeting the admin typed in (AddMeetingModal / Meetings edit / dashboard "held"
+// confirmation) is already known to be a meeting with known attendees, so there is no
+// routing or teacher-matching here — only the same summary + follow-up extraction a
+// voice-logged meeting gets.
+const MEETING_NOTES_PROMPT = `אתה עוזר שמנתח תיעוד כתוב של פגישה שקיים מנטור של מורים בבית ספר עם מורה אחד או יותר.
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
+{
+  "summary": "סיכום קצר של הפגישה, 2-3 משפטים",
+  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
+  "mentioned_dates": ["YYYY-MM-DD"]
+}
+תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].`
+
+export async function analyzeMeetingNotes(content, meetingDate) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: MEETING_NOTES_PROMPT,
+    messages: [{ role: 'user', content: `תאריך הפגישה: ${meetingDate}\n\n${content}` }],
+  })
+
+  const text = responseText(response)
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+
+  return {
+    summary: parsed.summary ?? '',
+    action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
+  }
+}
+
+// ─── Several records of the same meeting ───────────────────────────────────
+// The same real-world meeting can get logged more than once on the same day (typed in
+// twice, typed and also voice-logged, typed and later updated as a new entry). The
+// Meetings page merges those into one meeting; this consolidates their notes.
+const MERGE_MEETINGS_PROMPT = `אתה עוזר שמאחד כמה רשומות תיעוד של אותה פגישה שקיים מנטור של מורים בבית ספר. הרשומות נכתבו באותו יום, חלקן כפולות וחלקן מוסיפות או מעדכנות פרטים.
+
+הרשומות מסודרות מהישנה לחדשה. כשיש סתירה בין רשומות — הפרט ברשומה המאוחרת יותר הוא הנכון. אל תשמיט שום מידע ייחודי שמופיע רק ברשומה אחת, ואל תחזור על אותו מידע פעמיים.
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
+{
+  "content": "תיעוד מאוחד ומלא של הפגישה, בגוף ראשון כמו הרשומות המקוריות, מחולק לפסקאות לפי נושא",
+  "summary": "סיכום קצר של הפגישה, 2-3 משפטים",
+  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
+  "mentioned_dates": ["YYYY-MM-DD"],
+  "sources": [ { "record": 1, "taken": "משפט או שניים: איזה מידע מהרשומה הזו נכנס לתיעוד המאוחד, ומה ממנה הוחלף בפרט מעודכן מרשומה מאוחרת יותר (אם בכלל)" } ]
+}
+ב-"sources" החזר פריט אחד לכל רשומה, לפי המספר שלה. אם רשומה לא תרמה שום מידע חדש, כתוב זאת במפורש.
+תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].`
+
+export async function mergeMeetingNotes(notes, meetingDate) {
+  const numbered = notes.map((note, i) => `רשומה ${i + 1}:\n${note}`).join('\n\n---\n\n')
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: MERGE_MEETINGS_PROMPT,
+    messages: [{ role: 'user', content: `תאריך הפגישה: ${meetingDate}\n\n${numbered}` }],
+  })
+
+  const text = responseText(response)
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  if (!parsed.content?.trim()) throw new Error('Claude לא החזיר תיעוד מאוחד')
+
+  return {
+    content: parsed.content.trim(),
+    summary: parsed.summary ?? '',
+    action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
+    sources: Array.isArray(parsed.sources) ? parsed.sources : [],
   }
 }

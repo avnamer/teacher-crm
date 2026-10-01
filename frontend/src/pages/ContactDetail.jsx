@@ -365,6 +365,12 @@ export default function ContactDetail() {
                       {attendees?.length > 0 && (
                         <p className="text-xs text-gray-400 mb-1">השתתפו גם: {attendees.join(', ')}</p>
                       )}
+                      {i.metadata?.summary && (
+                        <p className="text-sm text-gray-600 bg-blue-50 rounded p-2 mb-2">
+                          <span className="text-xs font-medium text-blue-700">סיכום AI: </span>
+                          {i.metadata.summary}
+                        </p>
+                      )}
                       {actionItems.length > 0 && (
                         <div className="mb-2">
                           <p className="text-xs font-medium text-amber-700 mb-1">משימות המשך:</p>

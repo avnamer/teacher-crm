@@ -2,6 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import googleRouter from './src/routes/google.js'
+import meetingsRouter from './src/routes/meetings.js'
 import voiceLogRouter from './src/routes/voiceLog.js'
 import whatsappRouter from './src/routes/whatsapp.js'
 import whatsappSyncRouter from './src/routes/whatsappSync.js'
@@ -40,6 +41,7 @@ app.use(
 app.use(express.json({ limit: '20mb' }))
 
 app.use('/api/google', googleRouter)
+app.use('/api/meetings', meetingsRouter)
 app.use('/api/voice-log', voiceLogRouter)
 app.use('/api/whatsapp', whatsappRouter)
 // No CORS entry needed for this one: the extension's background worker calls it

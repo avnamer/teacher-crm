@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher } from '../lib/teachers.js'
 import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
+import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
+import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -239,6 +241,7 @@ export default function Meetings() {
   const [openSchool, setOpenSchool] = useState(null)
   const [openMeetingId, setOpenMeetingId] = useState(null)
   const [editingGroupId, setEditingGroupId] = useState(null)
+  const [openMergeKey, setOpenMergeKey] = useState(null)
 
   useEffect(() => {
     loadAll()
@@ -286,13 +289,15 @@ export default function Meetings() {
     try {
       const { data: rows, error: fetchErr } = await supabase
         .from('interactions')
-        .select('id, contact_id, metadata')
+        .select('id, contact_id, content, metadata')
         .in('id', rowIds)
       if (fetchErr) throw fetchErr
 
       const groupId = rows[0]?.metadata?.meeting_group_id || crypto.randomUUID()
       const rowsByContact = Object.fromEntries(rows.map(r => [r.contact_id, r]))
       const teachersById = Object.fromEntries(contacts.map(c => [c.id, c]))
+      const shouldAnalyze = !isFuture && needsMeetingAnalysis(rows[0], trimmedContent)
+      const finalRowIds = []
 
       for (const contactId of teacherIds) {
         const attendees = teacherIds
@@ -311,6 +316,7 @@ export default function Meetings() {
             ...restMetadata,
             meeting_group_id: groupId,
             attendees,
+            saved_at: new Date().toISOString(),
             ...(isFuture ? { meeting_status: 'scheduled' } : {}),
           }
           const { error } = await supabase
@@ -318,16 +324,21 @@ export default function Meetings() {
             .update({ content: trimmedContent, created_at: createdAt, metadata })
             .eq('id', existing.id)
           if (error) throw error
+          finalRowIds.push(existing.id)
         } else {
           const metadata = {
             meeting_group_id: groupId,
             attendees,
+            saved_at: new Date().toISOString(),
             ...(isFuture ? { meeting_status: 'scheduled' } : {}),
           }
-          const { error } = await supabase
+          const { data: inserted, error } = await supabase
             .from('interactions')
             .insert({ contact_id: contactId, type: 'meeting', content: trimmedContent, created_at: createdAt, metadata })
+            .select('id')
+            .single()
           if (error) throw error
+          finalRowIds.push(inserted.id)
         }
       }
 
@@ -339,6 +350,20 @@ export default function Meetings() {
 
       setEditingGroupId(null)
       await loadAll()
+
+      // Same AI summary + follow-up tasks a voice-logged meeting gets — in the
+      // background, so the edit form closes right away.
+      if (shouldAnalyze) {
+        analyzeManualMeeting({
+          rowIds: finalRowIds,
+          content: trimmedContent,
+          date,
+          attendeeNames: teacherIds.map(id => teachersById[id]?.name).filter(Boolean),
+        }).then(warning => {
+          if (warning) alert(warning)
+          loadAll()
+        })
+      }
     } catch (err) {
       alert('שגיאה בעדכון הפגישה: ' + err.message)
     }
@@ -366,6 +391,12 @@ export default function Meetings() {
   ).sort((a, b) => new Date(a.date) - new Date(b.date))
 
   const completedGroups = groupMeetingsByGroupId(completed, contactsById)
+  // Same-day records of one meeting, awaiting the admin's approve/reject (also shown
+  // on the dashboard).
+  const clusterByGroupId = {}
+  for (const cluster of findDuplicateMeetingClusters(meetings, contactsById)) {
+    for (const g of cluster.groups) clusterByGroupId[g.groupId] = cluster
+  }
   const bySchool = groupMeetingsBySchool(completedGroups)
   const lastAtBySchool = Object.fromEntries(bySchool.map(g => [g.school, g.lastAt]))
   const allSchools = [...new Set(contacts.map(c => c.school).filter(Boolean))]
@@ -480,6 +511,7 @@ export default function Meetings() {
                       <div className="border-t border-gray-200 divide-y divide-gray-100">
                         {sortedMeetingGroups.map(meetingGroup => {
                           const isMeetingOpen = openMeetingId === meetingGroup.groupId
+                          const mergeCluster = clusterByGroupId[meetingGroup.groupId]
                           return (
                             <div key={meetingGroup.groupId} className="px-4 py-3 bg-white">
                               {editingGroupId === meetingGroup.groupId ? (
@@ -512,6 +544,18 @@ export default function Meetings() {
                                       <span className="text-sm font-medium text-blue-600">{meetingGroup.contactNames.join(', ')}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                      {mergeCluster && (
+                                        <button
+                                          onClick={e => {
+                                            e.stopPropagation()
+                                            setOpenMergeKey(k => (k === mergeCluster.key ? null : mergeCluster.key))
+                                          }}
+                                          className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                          title="הצעה לאיחוד כל הרשומות של הפגישה מאותו יום, עם סיכום AI"
+                                        >
+                                          🔀 אחד פגישות מאותו יום
+                                        </button>
+                                      )}
                                       <span className="text-xs text-gray-400">
                                         {new Date(meetingGroup.date).toLocaleDateString('he-IL')}
                                       </span>
@@ -528,6 +572,16 @@ export default function Meetings() {
                                     <p className="text-sm text-gray-600 mt-1">
                                       {firstRowContent(meetingGroup.rowIds, meetings) || '—'}
                                     </p>
+                                  )}
+                                  {/* Shown once per cluster, under its latest record. */}
+                                  {mergeCluster && openMergeKey === mergeCluster.key &&
+                                    mergeCluster.groups.at(-1).groupId === meetingGroup.groupId && (
+                                    <div className="mt-2">
+                                      <MeetingMergeProposal
+                                        cluster={mergeCluster}
+                                        onDone={() => { setOpenMergeKey(null); loadAll() }}
+                                      />
+                                    </div>
                                   )}
                                 </>
                               )}
@@ -549,6 +603,7 @@ export default function Meetings() {
           teachers={contacts}
           onClose={() => setShowAddMeetingModal(false)}
           onSaved={() => { setShowAddMeetingModal(false); loadAll() }}
+          onAnalyzed={loadAll}
         />
       )}
     </div>

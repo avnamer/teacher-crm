@@ -94,6 +94,7 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
             confirmed_by_user: true,
             source: 'voice_pwa',
             route,
+            saved_at: new Date().toISOString(),
           },
         })
         const targetName = teacherIds.map(id => teachersById[id]?.name).filter(Boolean).join(', ')

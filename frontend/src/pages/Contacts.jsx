@@ -4,7 +4,10 @@ import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import WhatsAppSyncBanner from '../components/WhatsAppSyncBanner.jsx'
+import AdminTasksPanel from '../components/AdminTasksPanel.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
+import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
+import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
 import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx'
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
@@ -130,8 +133,11 @@ export default function Contacts() {
   const [pendingVoiceLogsExpanded, setPendingVoiceLogsExpanded] = useState(false)
   const [scheduledMeetings, setScheduledMeetings] = useState([]) // overdue interactions/meeting rows still marked 'scheduled'
   const [scheduledMeetingsExpanded, setScheduledMeetingsExpanded] = useState(false)
+  const [duplicateMeetings, setDuplicateMeetings] = useState([]) // same-day records of one meeting awaiting a merge decision
+  const [duplicateMeetingsExpanded, setDuplicateMeetingsExpanded] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set()) // free-form checkbox selection, for the "send to selected" action
   const [showSelectedSend, setShowSelectedSend] = useState(false)
+  const [adminTasksReloadKey, setAdminTasksReloadKey] = useState(0) // bumped when a voice log is approved, so a new admin task shows up
 
   useEffect(() => {
     loadContacts()
@@ -200,7 +206,7 @@ export default function Contacts() {
       setContacts(data || [])
       const ids = (data || []).map(c => c.id)
       const myTeacherIds = (data || []).filter(isMyTeacher).map(c => c.id)
-      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids), loadScheduledMeetings(myTeacherIds)])
+      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids), loadScheduledMeetings(myTeacherIds, data || [])])
     } catch (err) {
       console.error('Error loading contacts:', err)
     } finally {
@@ -261,7 +267,9 @@ export default function Contacts() {
   }
 
   // Scheduled meetings whose date has passed — the mentor needs to confirm what happened.
-  async function loadScheduledMeetings(contactIds) {
+  // Also finds same-day records of one meeting that should be merged (see
+  // findDuplicateMeetingClusters) — they come from the same query.
+  async function loadScheduledMeetings(contactIds, allContacts) {
     if (contactIds.length === 0) return
     try {
       const { data, error } = await supabase
@@ -275,6 +283,8 @@ export default function Contacts() {
         isScheduledMeeting(row) && new Date(row.created_at) <= now
       )
       setScheduledMeetings(overdue)
+      const contactsById = Object.fromEntries(allContacts.map(c => [c.id, c]))
+      setDuplicateMeetings(findDuplicateMeetingClusters(data || [], contactsById))
     } catch (err) {
       console.error('Error loading scheduled meetings:', err)
     }
@@ -472,8 +482,20 @@ export default function Contacts() {
         teachers={myTeachers}
         expanded={pendingVoiceLogsExpanded}
         onToggle={() => setPendingVoiceLogsExpanded(v => !v)}
-        onApproved={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
+        onApproved={id => {
+          setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))
+          // An approved "משימה אישית לי" may have just created the admin row — reload
+          // contacts so the panel gets its id, and reload the panel for the new task.
+          if (!contacts.some(isAdminRow)) loadContacts()
+          setAdminTasksReloadKey(k => k + 1)
+        }}
         onDeleted={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
+      />
+
+      <AdminTasksPanel
+        adminContactId={contacts.find(isAdminRow)?.id || null}
+        reloadKey={adminTasksReloadKey}
+        onAdminContactCreated={loadContacts}
       />
 
       <ContactStats
@@ -497,6 +519,14 @@ export default function Contacts() {
         onResolved={groupId => setScheduledMeetings(prev =>
           prev.filter(r => (r.metadata?.meeting_group_id || r.id) !== groupId)
         )}
+        onAnalyzed={loadContacts}
+      />
+
+      <DuplicateMeetingsBanner
+        clusters={duplicateMeetings}
+        expanded={duplicateMeetingsExpanded}
+        onToggle={() => setDuplicateMeetingsExpanded(v => !v)}
+        onResolved={key => setDuplicateMeetings(prev => prev.filter(c => c.key !== key))}
       />
 
       <WhatsAppSyncBanner />
@@ -851,6 +881,7 @@ export default function Contacts() {
           teachers={myTeachers}
           onClose={() => setShowAddMeetingModal(false)}
           onSaved={() => { setShowAddMeetingModal(false); loadContacts() }}
+          onAnalyzed={loadContacts}
         />
       )}
     </div>
@@ -987,9 +1018,11 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
 }
 
 // ─── Meetings needing an update (scheduled meetings whose date has passed) ──
-function ScheduledMeetingRow({ group, onResolved }) {
+function ScheduledMeetingRow({ group, initialContent, onResolved, onAnalyzed }) {
   const [editing, setEditing] = useState(false)
-  const [content, setContent] = useState('')
+  // Pre-filled with whatever was already written for this meeting (e.g. on the
+  // Meetings page) — what's in this box when "שמור" is pressed is what gets saved.
+  const [content, setContent] = useState(initialContent || '')
   const [saving, setSaving] = useState(false)
 
   async function markHeld() {
@@ -1001,18 +1034,33 @@ function ScheduledMeetingRow({ group, onResolved }) {
     try {
       const { data: rows, error: fetchErr } = await supabase
         .from('interactions')
-        .select('id, metadata')
+        .select('id, content, metadata')
         .in('id', group.rowIds)
       if (fetchErr) throw fetchErr
+      const shouldAnalyze = needsMeetingAnalysis(rows[0], content)
       for (const row of rows) {
-        const { meeting_status, ...rest } = row.metadata || {}
+        const { meeting_status: _meetingStatus, ...rest } = row.metadata || {}
         const { error } = await supabase
           .from('interactions')
-          .update({ content: content.trim(), metadata: rest })
+          .update({ content: content.trim(), metadata: { ...rest, saved_at: new Date().toISOString() } })
           .eq('id', row.id)
         if (error) throw error
       }
       onResolved(group.groupId)
+      if (shouldAnalyze) {
+        analyzeManualMeeting({
+          rowIds: group.rowIds,
+          content,
+          date: new Date(group.date).toISOString().split('T')[0],
+          attendeeNames: group.contactNames,
+        }).then(warning => {
+          if (warning) alert(warning)
+          onAnalyzed?.()
+        })
+      } else {
+        // Reload anyway: the now-held meeting may duplicate another record that day.
+        onAnalyzed?.()
+      }
     } catch (err) {
       alert('שגיאה בעדכון הפגישה: ' + err.message)
     } finally {
@@ -1093,7 +1141,7 @@ function ScheduledMeetingRow({ group, onResolved }) {
   )
 }
 
-function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolved }) {
+function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolved, onAnalyzed }) {
   const contactsById = Object.fromEntries(contacts.map(c => [c.id, c]))
   const groups = groupMeetingsByGroupId(rows, contactsById)
   if (groups.length === 0) return null
@@ -1118,9 +1166,49 @@ function ScheduledMeetingsBanner({ rows, contacts, expanded, onToggle, onResolve
       {expanded && (
         <ul className="mt-3 space-y-3">
           {groups.map(g => (
-            <ScheduledMeetingRow key={g.groupId} group={g} onResolved={onResolved} />
+            <ScheduledMeetingRow
+              key={g.groupId}
+              group={g}
+              initialContent={rows.find(r => g.rowIds.includes(r.id))?.content}
+              onResolved={onResolved}
+              onAnalyzed={onAnalyzed}
+            />
           ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+// Same-day records of one meeting — nothing is merged until the admin approves.
+function DuplicateMeetingsBanner({ clusters, expanded, onToggle, onResolved }) {
+  if (clusters.length === 0) return null
+
+  return (
+    <div className="rounded-xl border p-4 bg-purple-50 border-purple-200">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🔀</span>
+          <span className="text-sm font-medium text-purple-800">
+            {clusters.length === 1
+              ? 'פגישה אחת נרשמה יותר מפעם אחת. יש לאשר איחוד'
+              : `${clusters.length} פגישות נרשמו יותר מפעם אחת. יש לאשר איחוד`}
+          </span>
+        </div>
+        <button
+          onClick={onToggle}
+          className="text-xs px-3 py-1.5 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-100 transition-colors"
+        >
+          {expanded ? '▲ הסתר פירוט' : '▼ הצג פירוט'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          {clusters.map(cluster => (
+            <MeetingMergeProposal key={cluster.key} cluster={cluster} onDone={() => onResolved(cluster.key)} />
+          ))}
+        </div>
       )}
     </div>
   )

@@ -57,9 +57,11 @@ async function crmSentMessagesByDay(contactId, messages) {
  * `source` is 'dm' or 'group'; group batches also carry groupId/groupName.
  * Returns how many messages were actually saved vs skipped as duplicates, so
  * the route can roll the skip count into whatsapp_sync_state.
+ * `savedMessages` = the messages actually inserted, plus voice messages whose
+ * transcript was completed on this sync (not duplicates) — used to trigger task extraction.
  */
 export async function mergeWhatsAppMessages({ contactId, source, groupId, groupName, messages }) {
-  if (!messages?.length) return { saved: 0, duplicatesSkipped: 0 }
+  if (!messages?.length) return { saved: 0, duplicatesSkipped: 0, savedMessages: [] }
 
   const byDay = new Map()
   for (const m of messages) {
@@ -70,6 +72,7 @@ export async function mergeWhatsAppMessages({ contactId, source, groupId, groupN
 
   let saved = 0
   let duplicatesSkipped = 0
+  const savedMessages = []
   const sourceKey = source === 'group' ? `group:${groupId}` : 'dm'
   // CRM sends only ever go to the teacher's own DM, never into a group.
   const crmSentByDay = source === 'dm' ? await crmSentMessagesByDay(contactId, messages) : new Map()
@@ -145,9 +148,13 @@ export async function mergeWhatsAppMessages({ contactId, source, groupId, groupN
       if (error) throw error
     }
     saved += acceptedNow.length
+    savedMessages.push(...acceptedNow)
+    // A voice message whose transcript only arrived on this retry is new text too —
+    // without this, a task said in it would never be extracted.
+    savedMessages.push(...replacements.filter(r => r.transcriptionStatus === 'done'))
   }
 
-  return { saved, duplicatesSkipped }
+  return { saved, duplicatesSkipped, savedMessages }
 }
 
 /**

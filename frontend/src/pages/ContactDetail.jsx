@@ -39,6 +39,7 @@ export default function ContactDetail() {
   const [infoOpen, setInfoOpen] = useState(false)
   const [taskColumns, setTaskColumns] = useState([])
   const [savingTaskKey, setSavingTaskKey] = useState(null)
+  const [showDoneJournalTasks, setShowDoneJournalTasks] = useState(false)
 
   useEffect(() => {
     loadContact()
@@ -362,6 +363,8 @@ export default function ContactDetail() {
       {/* Follow-up tasks the system extracted into journal/interaction records */}
       <JournalTasksCard
         interactions={interactions}
+        showDone={showDoneJournalTasks}
+        onToggleShowDone={() => setShowDoneJournalTasks(!showDoneJournalTasks)}
         onToggleItem={toggleActionItem}
       />
 
@@ -590,7 +593,7 @@ function DashboardTasksCard({ contact, taskColumns, savingKey, onToggle }) {
   )
 }
 
-function JournalTasksCard({ interactions, onToggleItem }) {
+function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleItem }) {
   // Flatten every interaction's action_items, keeping a pointer back to its source record
   // so closing one writes to the right interaction (same toggle as inside the history list).
   const all = []
@@ -621,18 +624,22 @@ function JournalTasksCard({ interactions, onToggleItem }) {
       {all.length === 0 ? (
         <p className="text-gray-500 text-center py-4">לא תועדו משימות ביומן</p>
       ) : (
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="space-y-3">
           <div className="rounded-lg border border-red-100 bg-red-50 p-3">
             <p className="text-sm font-medium text-red-700 mb-2">לא טופל ({open.length})</p>
             {open.length === 0
               ? <p className="text-xs text-gray-400 px-2">הכל טופל 🎉</p>
               : <ul className="space-y-2">{open.map(renderItem)}</ul>}
           </div>
-          <div className="rounded-lg border border-green-100 bg-green-50 p-3">
-            <p className="text-sm font-medium text-green-700 mb-2">טופל ({done.length})</p>
-            {done.length === 0
-              ? <p className="text-xs text-gray-400 px-2">עדיין לא טופלו משימות</p>
-              : <ul className="space-y-2">{done.map(renderItem)}</ul>}
+          {/* Handled tasks stay collapsed — the list only grows over the year */}
+          <div className="rounded-lg border border-green-100 bg-green-50">
+            <button onClick={onToggleShowDone} disabled={done.length === 0}
+              className="w-full flex items-center gap-2 p-3 text-sm font-medium text-green-700 text-right disabled:cursor-default">
+              <span className={`text-xs transition-transform ${showDone ? '-rotate-90' : ''}`}>◀</span>
+              טופל
+              <span className="px-2 py-0.5 rounded-full bg-green-100 text-xs">{done.length}</span>
+            </button>
+            {showDone && <ul className="space-y-2 px-3 pb-3">{done.map(renderItem)}</ul>}
           </div>
         </div>
       )}

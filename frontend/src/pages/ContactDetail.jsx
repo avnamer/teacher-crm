@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { INTERACTION_TYPES, interactionIcon, interactionLabel, isSentMessage } from '../lib/interactions.js'
 import WhatsAppMessageList from '../components/WhatsAppMessageList.jsx'
+import { isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL } from '../lib/teachers.js'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -35,6 +36,10 @@ export default function ContactDetail() {
   const [editContent, setEditContent] = useState('')
   const [editType, setEditType] = useState('')
   const [expandedIds, setExpandedIds] = useState(() => new Set())
+  const [infoOpen, setInfoOpen] = useState(false)
+  const [taskColumns, setTaskColumns] = useState([])
+  const [savingTaskKey, setSavingTaskKey] = useState(null)
+  const [showDoneJournalTasks, setShowDoneJournalTasks] = useState(false)
 
   useEffect(() => {
     loadContact()
@@ -42,12 +47,14 @@ export default function ContactDetail() {
 
   async function loadContact() {
     try {
-      const [contactRes, interactionsRes, meetingsRes] = await Promise.all([
+      const [contactRes, interactionsRes, meetingsRes, taskCols] = await Promise.all([
         supabase.from('contacts').select('*').eq('id', id).single(),
         supabase.from('interactions').select('*').eq('contact_id', id).order('created_at', { ascending: false }),
         supabase.from('meetings').select('*').eq('contact_id', id).order('scheduled_at', { ascending: false }),
+        loadTaskColumns(supabase),
       ])
       if (contactRes.error) throw contactRes.error
+      setTaskColumns(taskCols)
       setContact(contactRes.data)
       setForm(contactRes.data)
       setInteractions(interactionsRes.data || [])
@@ -105,6 +112,29 @@ export default function ContactDetail() {
       setEditing(false)
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message)
+    }
+  }
+
+  // Same write as the dashboard's task cell (Contacts.jsx saveCell): a plain boolean in
+  // custom_fields, with _manual_edit so a later Monday sync doesn't overwrite the mark.
+  async function toggleDashboardTask(col) {
+    if (savingTaskKey) return
+    setSavingTaskKey(col.key)
+    const customFields = { ...(contact.custom_fields || {}), [col.key]: !isTaskDone(contact, col), _manual_edit: true }
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .update({ custom_fields: customFields })
+        .eq('id', id)
+        .select()
+        .single()
+      if (error) throw error
+      setContact(data)
+      setForm(data)
+    } catch (err) {
+      alert('שגיאה בעדכון משימה: ' + err.message)
+    } finally {
+      setSavingTaskKey(null)
     }
   }
 
@@ -240,10 +270,17 @@ export default function ContactDetail() {
         <span>{contact.name}</span>
       </div>
 
-      {/* Contact info card */}
+      {/* Contact info card — collapsed by default (accordion), forced open while editing */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-start justify-between mb-4">
-          <h1 className="text-2xl font-bold text-gray-800">{contact.name}</h1>
+        <div className="flex items-center justify-between">
+          <button onClick={() => setInfoOpen(!infoOpen)} disabled={editing}
+            className="flex items-center gap-2 text-right" title={infoOpen ? 'הסתר פרטים' : 'הצג פרטים'}>
+            <span className={`text-gray-400 text-sm transition-transform ${infoOpen || editing ? '-rotate-90' : ''}`}>◀</span>
+            <h1 className="text-2xl font-bold text-gray-800">{contact.name}</h1>
+            {!(infoOpen || editing) && (
+              <span className="text-sm text-gray-400 font-normal">פרטי קשר</span>
+            )}
+          </button>
           <div className="flex gap-2">
             {editing ? (
               <>
@@ -257,7 +294,7 @@ export default function ContactDetail() {
                 </button>
               </>
             ) : (
-              <button onClick={() => setEditing(true)}
+              <button onClick={() => { setEditing(true); setInfoOpen(true) }}
                 className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
                 ערוך
               </button>
@@ -266,7 +303,7 @@ export default function ContactDetail() {
         </div>
 
         {editing ? (
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 gap-4 mt-4">
             <Field label="שם" value={form.name} onChange={v => setForm({...form, name: v})} />
             <Field label="טלפון" value={form.phone} onChange={v => setForm({...form, phone: v})} dir="ltr" />
             <Field label="מייל" value={form.email} onChange={v => setForm({...form, email: v})} dir="ltr" />
@@ -302,8 +339,8 @@ export default function ContactDetail() {
               )}
             </div>
           </div>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-4">
+        ) : infoOpen && (
+          <div className="grid md:grid-cols-2 gap-4 mt-4">
             <InfoRow label="טלפון" value={contact.phone} dir="ltr" />
             <InfoRow label="מייל" value={contact.email} dir="ltr" />
             <InfoRow label="בית ספר" value={contact.school} />
@@ -314,6 +351,22 @@ export default function ContactDetail() {
           </div>
         )}
       </div>
+
+      {/* Dashboard task columns — done vs. not done for this teacher */}
+      <DashboardTasksCard
+        contact={contact}
+        taskColumns={taskColumns}
+        savingKey={savingTaskKey}
+        onToggle={toggleDashboardTask}
+      />
+
+      {/* Follow-up tasks the system extracted into journal/interaction records */}
+      <JournalTasksCard
+        interactions={interactions}
+        showDone={showDoneJournalTasks}
+        onToggleShowDone={() => setShowDoneJournalTasks(!showDoneJournalTasks)}
+        onToggleItem={toggleActionItem}
+      />
 
       {/* Interaction history */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -485,6 +538,106 @@ export default function ContactDetail() {
           מחק איש קשר
         </button>
       </div>
+    </div>
+  )
+}
+
+function DashboardTasksCard({ contact, taskColumns, savingKey, onToggle }) {
+  const open = taskColumns.filter(col => !isTaskDone(contact, col))
+  const done = taskColumns.filter(col => isTaskDone(contact, col))
+  const renderItem = col => {
+    const isDone = isTaskDone(contact, col)
+    return (
+      <li key={col.key}>
+        <button onClick={() => onToggle(col)} disabled={savingKey !== null}
+          className="w-full flex items-center gap-2 text-sm text-right px-2 py-1.5 rounded-lg hover:bg-white disabled:opacity-50"
+          title={isDone ? 'לחץ לביטול סימון' : 'לחץ לסימון כבוצע'}>
+          <span className={`w-5 h-5 shrink-0 rounded border flex items-center justify-center text-xs ${
+            isDone ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 bg-white text-transparent'
+          }`}>✓</span>
+          <span className={isDone ? 'text-gray-500' : 'text-gray-800'}>{col.label}</span>
+          <span className={`text-xs ${col.taskSource === 'monday' ? 'text-orange-400' : 'text-purple-400'}`}>
+            ({TASK_SOURCE_LABEL[col.taskSource] || col.taskSource})
+          </span>
+        </button>
+      </li>
+    )
+  }
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-gray-800">משימות מהדשבורד</h2>
+        {taskColumns.length > 0 && (
+          <span className="text-sm text-gray-500">{done.length}/{taskColumns.length} טופלו</span>
+        )}
+      </div>
+      {taskColumns.length === 0 ? (
+        <p className="text-gray-500 text-center py-4">אין עמודות משימה בדשבורד</p>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+            <p className="text-sm font-medium text-red-700 mb-2">לא טופל ({open.length})</p>
+            {open.length === 0
+              ? <p className="text-xs text-gray-400 px-2">הכל טופל 🎉</p>
+              : <ul className="space-y-0.5">{open.map(renderItem)}</ul>}
+          </div>
+          <div className="rounded-lg border border-green-100 bg-green-50 p-3">
+            <p className="text-sm font-medium text-green-700 mb-2">טופל ({done.length})</p>
+            {done.length === 0
+              ? <p className="text-xs text-gray-400 px-2">עדיין לא טופלו משימות</p>
+              : <ul className="space-y-0.5">{done.map(renderItem)}</ul>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleItem }) {
+  // Flatten every interaction's action_items, keeping a pointer back to its source record
+  // so closing one writes to the right interaction (same toggle as inside the history list).
+  const all = []
+  for (const i of interactions) {
+    (i.metadata?.action_items || []).forEach((item, idx) => all.push({ interaction: i, item, idx }))
+  }
+  const open = all.filter(t => !t.item.done)
+  const done = all.filter(t => t.item.done)
+  const renderItem = ({ interaction, item, idx }) => (
+    <li key={`${interaction.id}-${idx}`} className="flex items-start gap-2 p-2 rounded-lg bg-gray-50">
+      <input type="checkbox" checked={!!item.done} onChange={() => onToggleItem(interaction, idx)}
+        className="w-4 h-4 mt-0.5 shrink-0" title={item.done ? 'פתח מחדש' : 'סמן כבוצע'} />
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm ${item.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.text}</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {interactionIcon(interaction)} {interactionLabel(interaction)} · {new Date(interaction.created_at).toLocaleDateString('he-IL')}
+          {item.due_date && <> · 📅 יעד: {new Date(item.due_date).toLocaleDateString('he-IL')}</>}
+        </p>
+      </div>
+    </li>
+  )
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-gray-800">משימות מיומן האירועים</h2>
+        {all.length > 0 && <span className="text-sm text-gray-500">{open.length} פתוחות</span>}
+      </div>
+      {all.length === 0 ? (
+        <p className="text-gray-500 text-center py-4">לא תועדו משימות ביומן</p>
+      ) : (
+        <>
+          {open.length === 0
+            ? <p className="text-sm text-gray-400 text-center py-2">אין משימות פתוחות 🎉</p>
+            : <ul className="space-y-2">{open.map(renderItem)}</ul>}
+          {done.length > 0 && (
+            <div className="mt-3">
+              <button onClick={onToggleShowDone} className="text-xs text-blue-600 hover:underline">
+                {showDone ? 'הסתר משימות שבוצעו' : `הצג משימות שבוצעו (${done.length})`}
+              </button>
+              {showDone && <ul className="space-y-2 mt-2">{done.map(renderItem)}</ul>}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

@@ -40,6 +40,7 @@ tables or policies without an owner policy, and don't make any table publicly re
 | `/contacts/:id` | `ContactDetail.jsx` | Teacher detail, interaction/journal history |
 | `/meetings` | `Meetings.jsx` | Scheduled + past meetings (from `interactions`, `type='meeting'`), one row per real-world meeting (grouped by `meeting_group_id`), school recency, edit (date/content/attendees)/delete |
 | `/whatsapp` | `WhatsApp.jsx` | Templates, bulk send via send queue, task-based recipient filter |
+| `/whatsapp-groups` | `WhatsAppGroups.jsx` | Which WhatsApp groups the extension syncs (`whatsapp_groups.sync_enabled`) |
 | `/voice-log` | `VoiceLog.jsx` | PWA voice dictation → AI analysis → `pending_voice_logs` |
 | `/mentors` | `Mentors.jsx` | Mentor directory |
 | `/settings` | `Settings.jsx` | Monday board, working hours, CSV import modal |
@@ -67,6 +68,7 @@ copying them into pages:
 | `POST /api/meetings/merge` | Send several records of the same meeting (`notes[]`, oldest first) + date to Claude; returns one consolidated `content` + summary/action items/dates, later notes winning on conflict. Also returns `sources` (what was taken from each record). Used by `lib/meetingAnalysis.js`: `findDuplicateMeetingClusters()` finds held meetings on the same day sharing a school or attendee, `previewMeetingMerge()` calls this endpoint, and nothing is saved until the admin approves in `MeetingMergeProposal` (dashboard banner / Meetings page) → `applyMeetingMerge()`, or rejects → `declineMeetingMerge()` |
 | `GET /api/whatsapp/status` | Active send driver + capabilities |
 | `POST /api/whatsapp/bulk-send` | Slot for a future `cloud_api` driver (manual click-to-chat needs no server) |
+| `/api/whatsapp-sync/*` | Used only by the Chrome extension (`whatsapp-extension/`), authenticated by the `X-Extension-Token` header (`middleware/extensionAuth.js`), not a Supabase session. `GET /targets` (teachers with `custom_fields.whatsappSync` + enabled groups), `POST /messages` (`services/whatsappMerge.js`: one `whatsapp` interaction per contact per Israel day per source, dedup by `messageId` then text similarity — including same-day CRM-sent `message_sent`/`mailing_list` rows; advances the contact's sync cursor but never past an unresolved voice message), `POST /voice-transcribe` (Whisper + Claude summary; audio is never stored), `GET /retry-candidates`, `POST /groups`, `/sync/begin`/`progress`/`finish`, `/heartbeat`, `/unmatched`, `/failed`, `GET /pending-request` + `POST /request-done` (manual sync requests from the CRM) |
 
 ## Database (Supabase, `supabase-setup.sql`)
 
@@ -76,7 +78,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 | Table | Holds |
 |---|---|
 | `contacts` | Teachers (plus an admin pseudo-row, `custom_fields.is_admin_row`). `custom_fields` JSONB holds Monday data, task checkbox values, `mentor_name`, `_manual_edit` |
-| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`. `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` / `attendees` (meetings — one row per attendee per real-world meeting, all sharing one `meeting_group_id`; `attendees` lists the *other* attendees' names on each row; `summary` / `ai_analyzed_content` from AI analysis; `merged_sources` = the original notes of same-day records merged into this meeting; `not_duplicate_of` = group ids the admin said are separate meetings; `saved_at` = when the meeting was last saved, used to order same-day records), `sent_via` / `recipient_count` (bulk WhatsApp), admin tasks on the `is_admin_row` contact: per action item `recurrence` (`{type:'monthly', day}`) / `done_at` / `next_row_id`, per row `source` (`voice_pwa` / `admin_panel` / `recurring`) and `tasks_cleared` (all tasks of a recording removed — the row is kept), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
+| `interactions` | Every touchpoint: `type` ∈ `message_sent`, `mailing_list`, `correspondence`, `meeting`, `phone_call`, `journal`, `whatsapp` (synced chat: `metadata.source` `dm`/`group`, `group_id`/`group_name`, `messages[]` with `messageId`/`timestamp`/`sender`/`kind` and, for voice, `transcript`/`summary`/`transcriptionStatus`/`transcriptionRetries`). `metadata` JSONB keys include `column_label` (journal), `action_items` / `transcript` / `mentioned_dates` (voice log), `meeting_status` / `meeting_group_id` / `attendees` (meetings — one row per attendee per real-world meeting, all sharing one `meeting_group_id`; `attendees` lists the *other* attendees' names on each row; `summary` / `ai_analyzed_content` from AI analysis; `merged_sources` = the original notes of same-day records merged into this meeting; `not_duplicate_of` = group ids the admin said are separate meetings; `saved_at` = when the meeting was last saved, used to order same-day records), `sent_via` / `recipient_count` (bulk WhatsApp), admin tasks on the `is_admin_row` contact: per action item `recurrence` (`{type:'monthly', day}`) / `done_at` / `next_row_id`, per row `source` (`voice_pwa` / `admin_panel` / `recurring`) and `tasks_cleared` (all tasks of a recording removed — the row is kept), `responded` (message/mailing rows only — whether the teacher actually replied; see `countsTowardRecency()` in `lib/interactions.js`, gates the dashboard's "last contact" recency) |
 | `pending_voice_logs` | Unapproved voice-log analyses, scoped by `mentor_name` |
 | `settings` | Single row, **frontend-readable**: Monday board, working hours, `contacts_columns` (column config JSONB). Never store secrets here |
 | `app_private` | Secrets reachable only by the backend service key (RLS on, no policy): `google_calendar_tokens` |
@@ -85,6 +87,11 @@ applied. Add new changes at the end; don't edit earlier statements.
 | `meetings` | **Legacy**: Google Calendar sync only. Still read by `ContactDetail.jsx` and `/book`, but not by the Meetings page |
 | `scheduled_messages` | Written by `WhatsApp.jsx` but not consumed by anything |
 | `whatsapp_auth` | Unused since the move to click-to-chat |
+| `whatsapp_groups` | Groups the extension has seen; `sync_enabled` set from `/whatsapp-groups` |
+| `whatsapp_sync_state` | Single row (`id='global'`): last run status/error, progress, failed teachers, unmatched group senders, extension heartbeat |
+| `whatsapp_sync_requests` | Manual "sync now" requests from the CRM, polled by the extension |
+
+Per-teacher WhatsApp sync config lives in `contacts.custom_fields`: `whatsappSync`, `whatsappGroupAliases`, and the cursors `whatsappLastMessageAt` / `whatsappLastGroupMessageAt` (written by the backend; `ContactDetail.jsx` re-reads `custom_fields` before saving so it can't clobber them).
 
 ## Deployment
 
@@ -103,7 +110,8 @@ applied. Add new changes at the end; don't edit earlier statements.
 `avnamer@gmail.com` — UX only, RLS is the real gate)
 
 **`backend/.env`** (Render env vars in production)
-`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID`,
+`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (Whisper,
+WhatsApp voice messages), `WHATSAPP_EXTENSION_TOKEN` (shared secret with the extension), `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `WHATSAPP_DRIVER` (optional, default
 manual), `PORT` (optional)
 

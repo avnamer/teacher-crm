@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "סנכרון וואטסאפ ל-Teacher CRM",
+  "version": "1.0.32",
+  "version_name": "2026-10-01-32",
+  "description": "קורא הודעות וואטסאפ ממורים ומקבוצות נבחרות ומתעד אותן ב-Teacher CRM. קוראת בלבד את מה שמוצג ב-WhatsApp Web — לא שולחת הודעות ולא משתמשת בשום ספרייה לא-רשמית.",
+  "permissions": ["storage", "alarms", "tabs", "debugger", "tabCapture", "offscreen"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://localhost:3001/*",
+    "https://teacher-crm-backend.onrender.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["selectors.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "סנכרון וואטסאפ"
+  },
+  "options_page": "options.html"
+}

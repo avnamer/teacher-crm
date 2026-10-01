@@ -4,6 +4,7 @@ import Layout from './components/Layout.jsx'
 import Contacts from './pages/Contacts.jsx'
 import ContactDetail from './pages/ContactDetail.jsx'
 import WhatsApp from './pages/WhatsApp.jsx'
+import WhatsAppGroups from './pages/WhatsAppGroups.jsx'
 import Meetings from './pages/Meetings.jsx'
 import Settings from './pages/Settings.jsx'
 import VoiceLog from './pages/VoiceLog.jsx'
@@ -18,6 +19,7 @@ function App() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/contacts/:id" element={<ContactDetail />} />
           <Route path="/whatsapp" element={<WhatsApp />} />
+          <Route path="/whatsapp-groups" element={<WhatsAppGroups />} />
           <Route path="/meetings" element={<Meetings />} />
           <Route path="/voice-log" element={<VoiceLog />} />
           <Route path="/settings" element={<Settings />} />

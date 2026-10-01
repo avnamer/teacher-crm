@@ -5,6 +5,7 @@ import googleRouter from './src/routes/google.js'
 import meetingsRouter from './src/routes/meetings.js'
 import voiceLogRouter from './src/routes/voiceLog.js'
 import whatsappRouter from './src/routes/whatsapp.js'
+import whatsappSyncRouter from './src/routes/whatsappSync.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -35,12 +36,19 @@ app.use(
     },
   })
 )
-app.use(express.json())
+// 20mb covers a base64-encoded WhatsApp voice note (the /whatsapp-sync
+// voice-transcribe upload) — every other route here sends far smaller payloads.
+app.use(express.json({ limit: '20mb' }))
 
 app.use('/api/google', googleRouter)
 app.use('/api/meetings', meetingsRouter)
 app.use('/api/voice-log', voiceLogRouter)
 app.use('/api/whatsapp', whatsappRouter)
+// No CORS entry needed for this one: the extension's background worker calls it
+// with host_permissions declared in its manifest, which exempts it from CORS
+// entirely (unlike a content script or a web page). Auth here is the shared
+// X-Extension-Token instead — see src/middleware/extensionAuth.js.
+app.use('/api/whatsapp-sync', whatsappSyncRouter)
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 

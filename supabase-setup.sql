@@ -311,3 +311,65 @@ DROP POLICY IF EXISTS "Anon full access" ON teacher_teams;
 ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
 ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
   CHECK (type IN ('message_sent', 'correspondence', 'meeting', 'phone_call', 'journal', 'mailing_list'));
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: סנכרון הודעות וואטסאפ (2026-09-26, הרץ פעם אחת)
+--
+-- שדות התצורה למורה (whatsappSync, whatsappGroupAliases, whatsappLastMessageAt,
+-- whatsappLastGroupMessageAt) לא מקבלים עמודות ייעודיות — הם נכנסים ל-
+-- contacts.custom_fields, כמו mentor_name הקיים, כדי לא לגעת בסכימה של contacts.
+--
+-- התוסף (Chrome extension) לא מחזיק Supabase credentials בכלל: הוא מדבר רק עם
+-- הבקאנד (טוקן קבוע ב-WHATSAPP_EXTENSION_TOKEN), שכותב דרך ה-service key. גם
+-- אם היה מחזיק את מפתח ה-anon, ה-RLS "Owner full access" חוסם כתיבה בלי session
+-- מאומת של הבעלים — כך שדרך הבקאנד היא לא רק נוחה אלא הכרחית.
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE interactions DROP CONSTRAINT IF EXISTS interactions_type_check;
+ALTER TABLE interactions ADD CONSTRAINT interactions_type_check
+  CHECK (type IN ('message_sent', 'correspondence', 'meeting', 'phone_call', 'journal', 'mailing_list', 'whatsapp'));
+
+CREATE TABLE IF NOT EXISTS whatsapp_groups (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  group_id TEXT UNIQUE NOT NULL, -- מזהה הקבוצה ב-WhatsApp (למשל 123456789@g.us)
+  name TEXT NOT NULL,
+  sync_enabled BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_sync_enabled ON whatsapp_groups(sync_enabled);
+CREATE TRIGGER whatsapp_groups_updated_at
+  BEFORE UPDATE ON whatsapp_groups
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- שורה יחידה, בדיוק כמו settings — סטטוס הסנכרון המוצג בכפתור/שורת הסטטוס בעמוד המורים.
+CREATE TABLE IF NOT EXISTS whatsapp_sync_state (
+  id TEXT DEFAULT 'global' PRIMARY KEY,
+  last_success_at TIMESTAMPTZ,
+  last_attempt_at TIMESTAMPTZ,
+  last_status TEXT CHECK (last_status IN ('success', 'partial', 'failed', 'running')),
+  last_error TEXT,
+  failed_teachers JSONB DEFAULT '[]',
+  unmatched_group_senders JSONB DEFAULT '[]',
+  progress_done INT DEFAULT 0,
+  progress_total INT DEFAULT 0,
+  duplicates_skipped INT DEFAULT 0,
+  extension_heartbeat_at TIMESTAMPTZ
+);
+INSERT INTO whatsapp_sync_state (id) VALUES ('global') ON CONFLICT (id) DO NOTHING;
+
+-- בקשות סנכרון ידניות — נוצרות ע"י ה-CRM (מהמחשב או מהטלפון), נקלטות ע"י התוסף
+-- דרך polling (GET /api/whatsapp-sync/pending-request), כי לתוסף אין session של Supabase.
+CREATE TABLE IF NOT EXISTS whatsapp_sync_requests (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  requested_at TIMESTAMPTZ DEFAULT now(),
+  source TEXT CHECK (source IN ('manual', 'auto')) DEFAULT 'manual',
+  status TEXT CHECK (status IN ('pending', 'running', 'done', 'failed')) DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_sync_requests_status ON whatsapp_sync_requests(status);
+
+ALTER TABLE whatsapp_groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whatsapp_sync_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whatsapp_sync_requests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner full access" ON whatsapp_groups        FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON whatsapp_sync_state    FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON whatsapp_sync_requests FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

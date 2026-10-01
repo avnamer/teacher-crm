@@ -15,6 +15,12 @@ export const INTERACTION_TYPES = [
   // (as opposed to 'message_sent', which is one teacher). Also selectable by hand in
   // the interaction-type dropdown, for logging a mailing sent outside the system.
   { value: 'mailing_list', label: 'רשימת דיוור', icon: '✈️' },
+  // A day's worth of real WhatsApp messages pulled in by the sync (not sent through
+  // the system) — one row per contact per day per source (DM vs a specific group),
+  // metadata.messages holds the individual messages. Only the sync writes these, but
+  // it still appears in the reclassify dropdown like every other type; ContactDetail's
+  // renderer falls back to the plain content view if metadata.messages is empty.
+  { value: 'whatsapp', label: 'וואטסאפ', icon: '💬' },
 ]
 
 export const BULK_SEND_LABEL = 'רשימת דיוור'

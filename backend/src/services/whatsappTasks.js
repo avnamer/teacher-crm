@@ -71,23 +71,23 @@ async function findAdminContactId() {
 // ("don't return these") and to isDuplicateTask.
 async function loadExistingTasks(contactId, adminId) {
   const { data: teacherRows, error: tErr } = await supabase
-    .from('interactions').select('metadata')
+    .from('interactions').select('action_items:metadata->action_items') // just the tasks, not every message
     .eq('contact_id', contactId).eq('type', 'whatsapp')
   if (tErr) throw tErr
   const teacherTasks = (teacherRows || [])
-    .flatMap(r => r.metadata?.action_items || [])
+    .flatMap(r => r.action_items || [])
     .filter(i => i.source === 'whatsapp')
     .map(i => ({ assignee: 'teacher', text: i.text, done: !!i.done }))
 
   let adminTasks = []
   if (adminId) {
     const { data: adminRows, error: aErr } = await supabase
-      .from('interactions').select('metadata')
+      .from('interactions').select('action_items:metadata->action_items')
       .eq('contact_id', adminId)
       .contains('metadata', { source: 'whatsapp', whatsapp_contact_id: contactId })
     if (aErr) throw aErr
     adminTasks = (adminRows || [])
-      .flatMap(r => r.metadata?.action_items || [])
+      .flatMap(r => r.action_items || [])
       .map(i => ({ assignee: 'admin', text: i.text, done: !!i.done }))
   }
   return [...teacherTasks, ...adminTasks]

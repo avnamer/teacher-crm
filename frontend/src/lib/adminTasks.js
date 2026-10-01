@@ -33,7 +33,7 @@ function normalizeRecurrence(recurrence, due_date) {
 // Rows typed in this panel (or spawned by a recurring task) hold nothing but their task,
 // so removing the last task can delete the row. Anything else — a recorded voice log —
 // keeps its content and summary; only its tasks are cleared.
-const PANEL_ONLY_SOURCES = new Set(['admin_panel', 'recurring'])
+const PANEL_ONLY_SOURCES = new Set(['admin_panel', 'recurring', 'whatsapp'])
 
 function itemsOf(row) {
   if (row.metadata?.tasks_cleared) return []

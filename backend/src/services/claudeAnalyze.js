@@ -171,3 +171,73 @@ export async function mergeMeetingNotes(notes, meetingDate) {
     sources: Array.isArray(parsed.sources) ? parsed.sources : [],
   }
 }
+
+// ─── Tasks inside a synced WhatsApp DM ─────────────────────────────────────
+// WhatsApp sync (routes/whatsappSync.js) hands over the messages it just saved
+// for one teacher; services/whatsappTasks.js files each returned task under the
+// teacher or under the admin. No approval queue (spec 2026-10-01), so the prompt
+// errs toward fewer, concrete tasks.
+const WHATSAPP_TASKS_PROMPT = `אתה עוזר שמנתח התכתבות וואטסאפ בין אבנר (מנטור של מורים) לבין מורה אחד/ת, ומחלץ ממנה משימות.
+
+משימה היא התחייבות או בקשה קונקרטית לעשות משהו: לשלוח קובץ, למלא טופס, להגיע לפגישה, לבדוק משהו, לחזור עם תשובה. ברכות, תודות, שיחת חולין ומידע כללי אינם משימות.
+
+- "assignee": "teacher" — משהו שהמורה התבקש/ה לעשות או התחייב/ה לעשות.
+- "assignee": "admin" — משהו שאבנר התבקש לעשות או התחייב לעשות.
+- "message_date" — התאריך (YYYY-MM-DD) של ההודעה שממנה עלתה המשימה, כפי שמופיע בסוגריים בתחילת השורה.
+- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (חשב יחסית ל-message_date), אחרת null.
+- "done": true רק אם הודעה מאוחרת יותר בהתכתבות מראה במפורש שהמשימה בוצעה (למשל "שלחתי", "קיבלתי, תודה"). אחרת false.
+- נסח כל משימה קצר וברור, בעברית, בלי שם המבצע בתחילתה.
+- אל תחזיר משימה שכבר מופיעה ברשימת "משימות שכבר קיימות".
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
+{ "tasks": [ { "assignee": "teacher" | "admin", "text": "תיאור המשימה", "message_date": "YYYY-MM-DD", "due_date": "YYYY-MM-DD" | null, "done": false } ] }
+אם אין משימות, החזר { "tasks": [] }.`
+
+const VALID_ASSIGNEES = new Set(['teacher', 'admin'])
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Pure: keeps only well-formed tasks whose message_date is one of `allowedDates`. */
+export function normalizeWhatsAppTasks(parsed, allowedDates) {
+  const allowed = new Set(allowedDates)
+  return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
+    .filter(t => VALID_ASSIGNEES.has(t?.assignee))
+    .filter(t => typeof t.text === 'string' && t.text.trim())
+    .filter(t => allowed.has(t.message_date))
+    .map(t => ({
+      assignee: t.assignee,
+      text: t.text.trim(),
+      message_date: t.message_date,
+      due_date: ISO_DATE.test(t.due_date || '') ? t.due_date : null,
+      done: t.done === true,
+    }))
+}
+
+/**
+ * conversation: prompt-ready lines, oldest first (see formatMessagesForPrompt in
+ * services/whatsappTasks.js). existingTasks: [{ assignee, text, done }].
+ * messageDates: the Israel dates the conversation lines carry.
+ */
+export async function analyzeWhatsAppTasks({ teacherName, conversation, existingTasks, messageDates }) {
+  const existing = existingTasks.length
+    ? existingTasks.map(t => `- [${t.assignee === 'admin' ? 'אבנר' : teacherName}] ${t.text}${t.done ? ' (בוצעה)' : ''}`).join('\n')
+    : '(אין)'
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: WHATSAPP_TASKS_PROMPT,
+    messages: [{
+      role: 'user',
+      content: `שם המורה: ${teacherName}\n\nמשימות שכבר קיימות — אל תחזיר אותן שוב:\n${existing}\n\nההתכתבות:\n${conversation}`,
+    }],
+  })
+
+  const text = responseText(response)
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  return normalizeWhatsAppTasks(parsed, messageDates)
+}

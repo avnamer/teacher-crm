@@ -17,6 +17,36 @@ function sourceKeyOf(metadata) {
   return metadata?.source === 'group' ? `group:${metadata.group_id}` : 'dm'
 }
 
+// Confirmed live (2026-10-01): a WhatsApp message sent FROM the CRM is already
+// logged at send time as its own message_sent / mailing_list row — the sync
+// then read the very same message back out of the chat and logged it a second
+// time inside the day's whatsapp row. Returns those CRM-sent texts as
+// pseudo-messages keyed by Israel day, so isDuplicate's text-similarity check
+// can match them. Only channel 'whatsapp' (or older rows with no channel
+// recorded) — an email send of the same text is a different message.
+async function crmSentMessagesByDay(contactId, messages) {
+  const times = messages.map(m => new Date(m.timestamp).getTime())
+  const { data, error } = await supabase
+    .from('interactions')
+    .select('content, created_at, metadata')
+    .eq('contact_id', contactId)
+    .in('type', ['message_sent', 'mailing_list'])
+    .gte('created_at', new Date(Math.min(...times) - 24 * 3600 * 1000).toISOString())
+    .lte('created_at', new Date(Math.max(...times) + 24 * 3600 * 1000).toISOString())
+  if (error) throw error
+
+  const byDay = new Map()
+  for (const row of data || []) {
+    const channel = row.metadata?.channel
+    if (channel && channel !== 'whatsapp') continue
+    if (!row.content) continue
+    const day = israelDateStr(row.created_at)
+    if (!byDay.has(day)) byDay.set(day, [])
+    byDay.get(day).push({ sender: 'me', kind: 'text', text: row.content })
+  }
+  return byDay
+}
+
 /**
  * Merges a batch of newly-read WhatsApp messages for one contact into that
  * day's interactions row(s), applying spec §3.2/§3.3: one row per contact per
@@ -41,6 +71,8 @@ export async function mergeWhatsAppMessages({ contactId, source, groupId, groupN
   let saved = 0
   let duplicatesSkipped = 0
   const sourceKey = source === 'group' ? `group:${groupId}` : 'dm'
+  // CRM sends only ever go to the teacher's own DM, never into a group.
+  const crmSentByDay = source === 'dm' ? await crmSentMessagesByDay(contactId, messages) : new Map()
 
   for (const [day, dayMessages] of byDay) {
     const dayStartUtc = new Date(`${day}T00:00:00Z`).getTime()
@@ -77,7 +109,7 @@ export async function mergeWhatsAppMessages({ contactId, source, groupId, groupN
         }
         continue
       }
-      if (isDuplicate(m, [...allExistingMessages, ...acceptedNow])) {
+      if (isDuplicate(m, [...allExistingMessages, ...(crmSentByDay.get(day) || []), ...acceptedNow])) {
         duplicatesSkipped++
         continue
       }

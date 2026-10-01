@@ -625,12 +625,17 @@ function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleIt
         <p className="text-gray-500 text-center py-4">לא תועדו משימות ביומן</p>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-lg border border-red-100 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-700 mb-2">לא טופל ({open.length})</p>
-            {open.length === 0
-              ? <p className="text-xs text-gray-400 px-2">הכל טופל 🎉</p>
-              : <ul className="space-y-2">{open.map(renderItem)}</ul>}
-          </div>
+          {/* Nothing left open → a green "all done" banner instead of the red "needs attention" box */}
+          {open.length === 0 ? (
+            <div className="rounded-lg border border-green-100 bg-green-50 p-3">
+              <p className="text-sm font-medium text-green-700">כל המשימות שתועדו טופלו</p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+              <p className="text-sm font-medium text-red-700 mb-2">לא טופל ({open.length})</p>
+              <ul className="space-y-2">{open.map(renderItem)}</ul>
+            </div>
+          )}
           {/* Handled tasks stay collapsed — the list only grows over the year */}
           <div className="rounded-lg border border-green-100 bg-green-50">
             <button onClick={onToggleShowDone} disabled={done.length === 0}

@@ -72,7 +72,7 @@ metadata is preserved (read fresh, then update).
 **Admin task** → a new `interactions` row on the admin contact (the row with
 `custom_fields.is_admin_row`; the backend looks it up and skips admin tasks with a
 logged warning if it doesn't exist — it isn't created from the backend):
-- `type: 'journal'`, `created_at`: `message_date` at 12:00 Israel time
+- `type: 'journal'`, `created_at`: `message_date` at 10:00 UTC (12:00/13:00 Israel — same day either way)
 - `content`: `משימה מהתכתבות וואטסאפ עם <teacher name>`
 - `metadata`: `{ source: 'whatsapp', whatsapp_contact_id, whatsapp_contact_name,
   message_date, action_items: [{ text, due_date, done, source: 'whatsapp', message_date }] }`

@@ -39,7 +39,6 @@ export default function ContactDetail() {
   const [infoOpen, setInfoOpen] = useState(false)
   const [taskColumns, setTaskColumns] = useState([])
   const [savingTaskKey, setSavingTaskKey] = useState(null)
-  const [showDoneJournalTasks, setShowDoneJournalTasks] = useState(false)
 
   useEffect(() => {
     loadContact()
@@ -363,8 +362,6 @@ export default function ContactDetail() {
       {/* Follow-up tasks the system extracted into journal/interaction records */}
       <JournalTasksCard
         interactions={interactions}
-        showDone={showDoneJournalTasks}
-        onToggleShowDone={() => setShowDoneJournalTasks(!showDoneJournalTasks)}
         onToggleItem={toggleActionItem}
       />
 
@@ -593,7 +590,7 @@ function DashboardTasksCard({ contact, taskColumns, savingKey, onToggle }) {
   )
 }
 
-function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleItem }) {
+function JournalTasksCard({ interactions, onToggleItem }) {
   // Flatten every interaction's action_items, keeping a pointer back to its source record
   // so closing one writes to the right interaction (same toggle as inside the history list).
   const all = []
@@ -603,7 +600,7 @@ function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleIt
   const open = all.filter(t => !t.item.done)
   const done = all.filter(t => t.item.done)
   const renderItem = ({ interaction, item, idx }) => (
-    <li key={`${interaction.id}-${idx}`} className="flex items-start gap-2 p-2 rounded-lg bg-gray-50">
+    <li key={`${interaction.id}-${idx}`} className="flex items-start gap-2 p-2 rounded-lg bg-white">
       <input type="checkbox" checked={!!item.done} onChange={() => onToggleItem(interaction, idx)}
         className="w-4 h-4 mt-0.5 shrink-0" title={item.done ? 'פתח מחדש' : 'סמן כבוצע'} />
       <div className="flex-1 min-w-0">
@@ -624,19 +621,20 @@ function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleIt
       {all.length === 0 ? (
         <p className="text-gray-500 text-center py-4">לא תועדו משימות ביומן</p>
       ) : (
-        <>
-          {open.length === 0
-            ? <p className="text-sm text-gray-400 text-center py-2">אין משימות פתוחות 🎉</p>
-            : <ul className="space-y-2">{open.map(renderItem)}</ul>}
-          {done.length > 0 && (
-            <div className="mt-3">
-              <button onClick={onToggleShowDone} className="text-xs text-blue-600 hover:underline">
-                {showDone ? 'הסתר משימות שבוצעו' : `הצג משימות שבוצעו (${done.length})`}
-              </button>
-              {showDone && <ul className="space-y-2 mt-2">{done.map(renderItem)}</ul>}
-            </div>
-          )}
-        </>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+            <p className="text-sm font-medium text-red-700 mb-2">לא טופל ({open.length})</p>
+            {open.length === 0
+              ? <p className="text-xs text-gray-400 px-2">הכל טופל 🎉</p>
+              : <ul className="space-y-2">{open.map(renderItem)}</ul>}
+          </div>
+          <div className="rounded-lg border border-green-100 bg-green-50 p-3">
+            <p className="text-sm font-medium text-green-700 mb-2">טופל ({done.length})</p>
+            {done.length === 0
+              ? <p className="text-xs text-gray-400 px-2">עדיין לא טופלו משימות</p>
+              : <ul className="space-y-2">{done.map(renderItem)}</ul>}
+          </div>
+        </div>
       )}
     </div>
   )

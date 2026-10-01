@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { normalizeText } from './whatsappDedup.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -183,14 +184,15 @@ const WHATSAPP_TASKS_PROMPT = `אתה עוזר שמנתח התכתבות ווא�
 
 - "assignee": "teacher" — משהו שהמורה התבקש/ה לעשות או התחייב/ה לעשות.
 - "assignee": "admin" — משהו שאבנר התבקש לעשות או התחייב לעשות.
-- "message_date" — התאריך (YYYY-MM-DD) של ההודעה שממנה עלתה המשימה, כפי שמופיע בסוגריים בתחילת השורה.
-- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (חשב יחסית ל-message_date), אחרת null.
+- "message_date" — התאריך (YYYY-MM-DD) של ההודעה שממנה עלתה המשימה, כפי שמופיע בסוגריים בתחילת השורה (אחריו מופיעים היום בשבוע והשעה).
+- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (חשב יחסית ל-message_date, והיעזר ביום בשבוע שמופיע בשורה עבור ביטויים כמו "ביום שלישי"), אחרת null.
 - "done": true רק אם הודעה מאוחרת יותר בהתכתבות מראה במפורש שהמשימה בוצעה (למשל "שלחתי", "קיבלתי, תודה"). אחרת false.
+- "🎤" בתחילת הודעה = תמלול של הודעה קולית; טקסט כמו [תמונה] או [מסמך: ...] = קובץ או מדיה שנשלחו.
 - נסח כל משימה קצר וברור, בעברית, בלי שם המבצע בתחילתה.
 - אל תחזיר משימה שכבר מופיעה ברשימת "משימות שכבר קיימות".
 
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
-{ "tasks": [ { "assignee": "teacher" | "admin", "text": "תיאור המשימה", "message_date": "YYYY-MM-DD", "due_date": "YYYY-MM-DD" | null, "done": false } ] }
+{ "tasks": [ { "assignee": "teacher" | "admin", "text": "תיאור המשימה", "message_date": "YYYY-MM-DD", "due_date": "YYYY-MM-DD" | null, "done": true | false } ] }
 אם אין משימות, החזר { "tasks": [] }.`
 
 const VALID_ASSIGNEES = new Set(['teacher', 'admin'])
@@ -201,7 +203,7 @@ export function normalizeWhatsAppTasks(parsed, allowedDates) {
   const allowed = new Set(allowedDates)
   return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
     .filter(t => VALID_ASSIGNEES.has(t?.assignee))
-    .filter(t => typeof t.text === 'string' && t.text.trim())
+    .filter(t => typeof t.text === 'string' && normalizeText(t.text)) // drops emoji/punctuation-only text
     .filter(t => allowed.has(t.message_date))
     .map(t => ({
       assignee: t.assignee,

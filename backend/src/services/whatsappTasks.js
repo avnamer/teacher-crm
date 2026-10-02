@@ -98,22 +98,39 @@ function actionItem(task) {
 }
 
 /**
- * Runs after POST /messages has responded (DM batches only). `savedMessages` are
- * the messages mergeWhatsAppMessages actually inserted. Throws on failure — the
- * caller logs it; the sync itself has already succeeded.
+ * Load + analyze, no writes: the tasks Claude finds in `savedMessages`, minus any
+ * already filed for this teacher. Returns null when the messages carry no text.
+ * Split from saveWhatsAppTasks so the backfill script can show the owner exactly
+ * what will be saved, then save that same list without a second Claude call.
  */
-export async function extractAndSaveWhatsAppTasks({ contactId, savedMessages }) {
+export async function findWhatsAppTasks({ contactId, savedMessages }) {
   const { data: contact, error: cErr } = await supabase.from('contacts').select('name').eq('id', contactId).single()
   if (cErr) throw cErr
   const { conversation, messageDates } = formatMessagesForPrompt(savedMessages, contact.name)
-  if (!conversation) return { teacherTasks: 0, adminTasks: 0 }
+  if (!conversation) return null
 
-  const adminId = await findAdminContactId()
-  const existingTasks = await loadExistingTasks(contactId, adminId)
+  const existingTasks = await loadExistingTasks(contactId, await findAdminContactId())
   const found = await analyzeWhatsAppTasks({ teacherName: contact.name, conversation, existingTasks, messageDates })
 
-  const accepted = []
+  const tasks = []
   for (const task of found) {
+    if (isDuplicateTask(task, [...existingTasks, ...tasks])) continue
+    tasks.push(task)
+  }
+  return { contactName: contact.name, messageDates, tasks }
+}
+
+/**
+ * Writes `tasks` (from findWhatsAppTasks): teacher tasks onto the DM day rows,
+ * admin tasks as rows on the admin contact; stamps tasks_analyzed_at on every day
+ * in `messageDates`. Re-checks duplicates against what is stored now, so saving a
+ * list that was found a while ago is still safe.
+ */
+export async function saveWhatsAppTasks({ contactId, contactName, messageDates, tasks }) {
+  const adminId = await findAdminContactId()
+  const existingTasks = await loadExistingTasks(contactId, adminId)
+  const accepted = []
+  for (const task of tasks) {
     if (isDuplicateTask(task, [...existingTasks, ...accepted])) continue
     accepted.push(task)
   }
@@ -154,11 +171,11 @@ export async function extractAndSaveWhatsAppTasks({ contactId, savedMessages }) 
         // Noon-ish Israel time on the message's day (10:00Z = 12:00/13:00 Israel), so
         // the row — and "המשימות שלי" — show the conversation's date, not the sync's.
         created_at: `${task.message_date}T10:00:00.000Z`,
-        content: `משימה מהתכתבות וואטסאפ עם ${contact.name}`,
+        content: `משימה מהתכתבות וואטסאפ עם ${contactName}`,
         metadata: {
           source: 'whatsapp',
           whatsapp_contact_id: contactId,
-          whatsapp_contact_name: contact.name,
+          whatsapp_contact_name: contactName,
           message_date: task.message_date,
           action_items: [actionItem(task)],
         },
@@ -169,4 +186,15 @@ export async function extractAndSaveWhatsAppTasks({ contactId, savedMessages }) 
   }
 
   return { teacherTasks, adminTasks }
+}
+
+/**
+ * Runs after POST /messages has responded (DM batches only). `savedMessages` are
+ * the messages mergeWhatsAppMessages actually inserted. Throws on failure — the
+ * caller logs it; the sync itself has already succeeded.
+ */
+export async function extractAndSaveWhatsAppTasks({ contactId, savedMessages }) {
+  const found = await findWhatsAppTasks({ contactId, savedMessages })
+  if (!found) return { teacherTasks: 0, adminTasks: 0 }
+  return saveWhatsAppTasks({ contactId, ...found })
 }

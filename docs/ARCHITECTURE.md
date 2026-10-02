@@ -70,6 +70,9 @@ copying them into pages:
 | `POST /api/whatsapp/bulk-send` | Slot for a future `cloud_api` driver (manual click-to-chat needs no server) |
 | `/api/whatsapp-sync/*` | Used only by the Chrome extension (`whatsapp-extension/`), authenticated by the `X-Extension-Token` header (`middleware/extensionAuth.js`), not a Supabase session. `GET /targets` (teachers with `custom_fields.whatsappSync` + enabled groups), `POST /messages` (`services/whatsappMerge.js`: one `whatsapp` interaction per contact per Israel day per source, dedup by `messageId` then text similarity — including same-day CRM-sent `message_sent`/`mailing_list` rows; advances the contact's sync cursor but never past an unresolved voice message; for DM batches it then runs `services/whatsappTasks.js` in the background — Claude task extraction, see `interactions` below), `POST /voice-transcribe` (Whisper + Claude summary; audio is never stored), `GET /retry-candidates`, `POST /groups`, `/sync/begin`/`progress`/`finish`, `/heartbeat`, `/unmatched`, `/failed`, `GET /pending-request` + `POST /request-done` (manual sync requests from the CRM) |
 
+Backend scripts (run from `backend/`, against the database in `backend/.env`):
+`scripts/whatsapp-tasks-dry-run.mjs <contact-id>…` prints the tasks Claude finds in a contact's stored WhatsApp DMs (no writes); `scripts/whatsapp-tasks-backfill.mjs` runs task extraction on DM rows without `tasks_analyzed_at` — preview first (writes a plan file), then `--save` saves exactly that plan.
+
 ## Database (Supabase, `supabase-setup.sql`)
 
 `supabase-setup.sql` is the schema **plus appended migrations**, in the order they were

@@ -49,6 +49,8 @@ One Claude call per DM batch that actually saved new messages. Same model, token
   teacher task; a question or problem the teacher raised that the conversation never
   explicitly confirms as solved stays an open task — the teacher's (to do what was
   suggested) or Avner's (if he committed to check or get back to her).
+  But a question that got a full answer (information that answers it, nothing left to
+  do) is not a task, even without the teacher confirming (owner decision, Nur's chat).
 - `assignee: "teacher"` — something the teacher was asked to do or committed to do.
   `assignee: "admin"` — something Avner was asked to do or committed to do.
 - `message_date` — the date (`YYYY-MM-DD`) of the message the task comes from.

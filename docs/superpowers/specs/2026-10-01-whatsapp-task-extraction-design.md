@@ -44,6 +44,11 @@ One Claude call per DM batch that actually saved new messages. Same model, token
 - A task is a concrete commitment or request to do something: sending a file, filling
   a form, arriving at a meeting, checking something. Greetings, thanks, small talk and
   general information are not tasks.
+- Also tasks (owner decision 2026-10-02, after testing Anat's chat): a suggestion or
+  instruction from Avner for the teacher to do something ("תסתכלי בסרטון") is a
+  teacher task; a question or problem the teacher raised that the conversation never
+  explicitly confirms as solved stays an open task — the teacher's (to do what was
+  suggested) or Avner's (if he committed to check or get back to her).
 - `assignee: "teacher"` — something the teacher was asked to do or committed to do.
   `assignee: "admin"` — something Avner was asked to do or committed to do.
 - `message_date` — the date (`YYYY-MM-DD`) of the message the task comes from.

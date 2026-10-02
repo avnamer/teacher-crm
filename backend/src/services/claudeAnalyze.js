@@ -176,11 +176,16 @@ export async function mergeMeetingNotes(notes, meetingDate) {
 // ─── Tasks inside a synced WhatsApp DM ─────────────────────────────────────
 // WhatsApp sync (routes/whatsappSync.js) hands over the messages it just saved
 // for one teacher; services/whatsappTasks.js files each returned task under the
-// teacher or under the admin. No approval queue (spec 2026-10-01), so the prompt
-// errs toward fewer, concrete tasks.
+// teacher or under the admin. No approval queue (spec 2026-10-01): small talk is
+// left out, but an open problem the conversation never confirms as solved is kept
+// (owner decision 2026-10-02 — "לא ברור אם זה בוצע ואם היא הצליחה, לכן זו משימה").
 const WHATSAPP_TASKS_PROMPT = `אתה עוזר שמנתח התכתבות וואטסאפ בין אבנר (מנטור של מורים) לבין מורה אחד/ת, ומחלץ ממנה משימות.
 
 משימה היא התחייבות או בקשה קונקרטית לעשות משהו: לשלוח קובץ, למלא טופס, להגיע לפגישה, לבדוק משהו, לחזור עם תשובה. ברכות, תודות, שיחת חולין ומידע כללי אינם משימות.
+
+גם אלה משימות:
+- הצעה או הנחיה של אבנר למורה לעשות משהו (למשל "תסתכלי בסרטון", "תנסי להיכנס דרך האתר") — משימה של המורה.
+- שאלה או בעיה שהמורה העלתה, ושבהמשך ההתכתבות אין אישור מפורש שהיא נפתרה (למשל המורה לא כתבה "הצלחתי" או "הסתדרתי") — משימה פתוחה: של המורה לבצע את מה שהוצע לה, או של אבנר אם הוא התחייב לבדוק או לחזור אליה.
 
 - "assignee": "teacher" — משהו שהמורה התבקש/ה לעשות או התחייב/ה לעשות.
 - "assignee": "admin" — משהו שאבנר התבקש לעשות או התחייב לעשות.

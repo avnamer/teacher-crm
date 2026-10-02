@@ -252,19 +252,56 @@ export default function Contacts() {
     try {
       const { data, error } = await supabase
         .from('interactions')
-        .select('contact_id, metadata')
+        .select('id, contact_id, metadata')
         .in('type', ['phone_call', 'whatsapp'])
         .in('contact_id', contactIds)
       if (error) throw error
       const map = {}
       for (const row of data || []) {
-        const items = (row.metadata?.action_items || []).filter(item => !item.done)
+        // rowId + index (position in the row's full action_items) let the banner mark one done.
+        const items = (row.metadata?.action_items || [])
+          .map((item, index) => ({ ...item, rowId: row.id, index }))
+          .filter(item => !item.done)
         if (items.length === 0) continue
         map[row.contact_id] = [...(map[row.contact_id] || []), ...items]
       }
       setPendingTasksMap(map)
     } catch (err) {
       console.error('Error loading pending tasks:', err)
+    }
+  }
+
+  // Ticked in the open-tasks banner. Reads the row fresh — a WhatsApp sync may have
+  // added messages or tasks since the dashboard loaded — and finds the item by its
+  // index, falling back to its text in case the list shifted meanwhile.
+  async function markPendingTaskDone(contactId, task) {
+    try {
+      const { data: fresh, error: loadErr } = await supabase
+        .from('interactions')
+        .select('metadata')
+        .eq('id', task.rowId)
+        .single()
+      if (loadErr) throw loadErr
+      const items = fresh.metadata?.action_items || []
+      const index = items[task.index]?.text === task.text
+        ? task.index
+        : items.findIndex(item => item.text === task.text && !item.done)
+      if (index < 0) throw new Error('המשימה לא נמצאה — רענן את הדף')
+      const updated = items.map((item, i) => (i === index ? { ...item, done: true } : item))
+      const { error } = await supabase
+        .from('interactions')
+        .update({ metadata: { ...fresh.metadata, action_items: updated } })
+        .eq('id', task.rowId)
+      if (error) throw error
+      setPendingTasksMap(prev => {
+        const remaining = (prev[contactId] || []).filter(t => !(t.rowId === task.rowId && t.index === task.index))
+        const next = { ...prev }
+        if (remaining.length) next[contactId] = remaining
+        else delete next[contactId]
+        return next
+      })
+    } catch (err) {
+      alert('שגיאה בסימון המשימה: ' + err.message)
     }
   }
 
@@ -511,6 +548,7 @@ export default function Contacts() {
         contacts={contacts}
         expanded={pendingTasksExpanded}
         onToggle={() => setPendingTasksExpanded(!pendingTasksExpanded)}
+        onMarkDone={markPendingTaskDone}
       />
 
       <ScheduledMeetingsBanner
@@ -971,7 +1009,7 @@ function TaskStats({ stats }) {
 }
 
 // ─── Pending follow-up tasks banner (from voice-logged phone calls) ──
-function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
+function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle, onMarkDone }) {
   const entries = Object.entries(pendingTasksMap).filter(([, items]) => items.length > 0)
   if (entries.length === 0) return null
 
@@ -981,7 +1019,7 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
         <div className="flex items-center gap-2">
           <span className="text-lg">❗</span>
           <span className="text-sm font-medium text-amber-800">
-            {entries.length} מורים עם משימות פתוחות מתיעוד שיחות טלפון
+            {entries.length} מורים עם משימות פתוחות מתיעוד שיחות ומוואטסאפ
           </span>
         </div>
         <button
@@ -1002,11 +1040,19 @@ function PendingTasksBanner({ pendingTasksMap, contacts, expanded, onToggle }) {
                 <Link to={`/contacts/${contactId}`} className="font-medium text-amber-800 hover:underline">
                   {contact.name}
                 </Link>
-                <ul className="mr-4 list-disc text-amber-700">
-                  {items.map((item, i) => (
-                    <li key={i}>
-                      {item.text}
-                      {item.due_date && ` (עד ${new Date(item.due_date).toLocaleDateString('he-IL')})`}
+                <ul className="mr-2 mt-1 space-y-1 text-amber-700">
+                  {items.map(item => (
+                    <li key={`${item.rowId}:${item.index}`} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        onChange={() => onMarkDone(contactId, item)}
+                        title="סמן כבוצעה"
+                        className="w-4 h-4 mt-0.5 shrink-0 cursor-pointer accent-amber-600"
+                      />
+                      <span>
+                        {item.text}
+                        {item.due_date && ` (עד ${new Date(item.due_date).toLocaleDateString('he-IL')})`}
+                      </span>
                     </li>
                   ))}
                 </ul>

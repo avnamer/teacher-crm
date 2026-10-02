@@ -163,11 +163,19 @@ export default function ContactDetail() {
   }
 
   async function toggleActionItem(interaction, itemIndex) {
-    const items = interaction.metadata.action_items.map((item, idx) =>
-      idx === itemIndex ? { ...item, done: !item.done } : item
-    )
-    const newMetadata = { ...interaction.metadata, action_items: items }
     try {
+      // Read the row fresh: a WhatsApp sync may have added messages or tasks to it
+      // since this page loaded, and writing page-load metadata back would wipe them.
+      const { data: fresh, error: loadErr } = await supabase
+        .from('interactions')
+        .select('metadata')
+        .eq('id', interaction.id)
+        .single()
+      if (loadErr) throw loadErr
+      const items = (fresh.metadata?.action_items || []).map((item, idx) =>
+        idx === itemIndex ? { ...item, done: !item.done } : item
+      )
+      const newMetadata = { ...fresh.metadata, action_items: items }
       const { error } = await supabase
         .from('interactions')
         .update({ metadata: newMetadata })
@@ -439,6 +447,11 @@ export default function ContactDetail() {
                                 {item.due_date && (
                                   <span className="text-xs text-gray-400">
                                     📅 {new Date(item.due_date).toLocaleDateString('he-IL')}
+                                  </span>
+                                )}
+                                {item.source === 'whatsapp' && item.message_date && (
+                                  <span className="text-xs text-gray-400" title="נשאבה מהתכתבות וואטסאפ">
+                                    💬 {new Date(item.message_date).toLocaleDateString('he-IL')}
                                   </span>
                                 )}
                               </li>

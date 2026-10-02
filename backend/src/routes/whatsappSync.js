@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { requireExtensionToken } from '../middleware/extensionAuth.js'
 import { mergeWhatsAppMessages, findRetryCandidates } from '../services/whatsappMerge.js'
+import { extractAndSaveWhatsAppTasks } from '../services/whatsappTasks.js'
 import { transcribeAudio } from '../services/transcribeAudio.js'
 import { summarizeVoiceMessage } from '../services/whatsappSummarize.js'
 
@@ -86,7 +87,7 @@ router.post('/messages', async (req, res) => {
     return res.status(400).json({ message: 'contactId / source / messages חסרים' })
   }
   try {
-    const { saved, duplicatesSkipped } = await mergeWhatsAppMessages({ contactId, source, groupId, groupName, messages })
+    const { saved, duplicatesSkipped, savedMessages } = await mergeWhatsAppMessages({ contactId, source, groupId, groupName, messages })
 
     // Confirmed live (2026-09-30): advancing the cursor to the batch's last
     // message regardless of whether an earlier voice message in that SAME
@@ -126,6 +127,15 @@ router.post('/messages', async (req, res) => {
       await patchState({ duplicates_skipped: (state.duplicates_skipped || 0) + duplicatesSkipped })
     }
     res.json({ saved, duplicatesSkipped })
+
+    // Task extraction (spec 2026-10-01) runs after responding, so a Claude
+    // failure or slowness never fails or delays the sync. DM only; a batch that
+    // saved nothing new (a re-sync) costs no Claude call.
+    if (source === 'dm' && savedMessages.length > 0) {
+      extractAndSaveWhatsAppTasks({ contactId, savedMessages })
+        .then(r => console.log('[whatsapp-sync/tasks]', contactId, r))
+        .catch(err => console.error('[whatsapp-sync/tasks]', contactId, err))
+    }
   } catch (err) {
     console.error('[whatsapp-sync/messages]', err)
     res.status(500).json({ message: 'שמירת ההודעות נכשלה: ' + err.message })

@@ -10,7 +10,7 @@
 // One tunable constant, per spec §3.3.5 ("קל לשנות אותו").
 export const SIMILARITY_THRESHOLD = 0.9
 
-function normalizeText(str) {
+export function normalizeText(str) {
   return (str || '')
     .replace(/\s+/g, ' ')
     .replace(/[^\p{L}\p{N}\s]/gu, '') // strip punctuation/emoji, per §3.3.2
@@ -33,7 +33,7 @@ function levenshtein(a, b) {
   return dp[m][n]
 }
 
-function similarity(a, b) {
+export function similarity(a, b) {
   if (!a || !b) return a === b ? 1 : 0
   const dist = levenshtein(a, b)
   const maxLen = Math.max(a.length, b.length) || 1

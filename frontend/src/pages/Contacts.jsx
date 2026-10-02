@@ -252,7 +252,7 @@ export default function Contacts() {
     try {
       const { data, error } = await supabase
         .from('interactions')
-        .select('contact_id, metadata')
+        .select('id, contact_id, metadata')
         .in('type', ['phone_call', 'whatsapp'])
         .in('contact_id', contactIds)
       if (error) throw error

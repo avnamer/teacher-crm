@@ -206,7 +206,9 @@ export default function Contacts() {
       setContacts(data || [])
       const ids = (data || []).map(c => c.id)
       const myTeacherIds = (data || []).filter(isMyTeacher).map(c => c.id)
-      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(ids), loadScheduledMeetings(myTeacherIds, data || [])])
+      // The admin row's tasks live in the "המשימות שלי" panel — keep them out of the teachers' banner.
+      const teacherIds = (data || []).filter(c => !isAdminRow(c)).map(c => c.id)
+      await Promise.all([loadJournalEntries(ids), loadLastContactDates(ids), loadPendingTasks(teacherIds),loadScheduledMeetings(myTeacherIds, data || [])])
     } catch (err) {
       console.error('Error loading contacts:', err)
     } finally {

@@ -250,3 +250,50 @@ export async function analyzeWhatsAppTasks({ teacherName, conversation, existing
   }
   return normalizeWhatsAppTasks(parsed, messageDates)
 }
+
+// ─── Voice-dictated tasks for the admin ────────────────────────────────────
+// A recording that opens with "משימה לעצמי" / "משימה למנהל המערכת" (or that the user
+// saved with the "שמור כמשימה" button) is known to be a task list for Avner himself —
+// no teacher, no interaction type, no approval queue. Only the split into separate
+// tasks and their due dates is left for Claude.
+const ADMIN_TASKS_PROMPT = `אתה עוזר שמקבל תמלול של הודעה קולית שהקליט אבנר (מנטור של מורים) כדי לרשום משימות לעצמו.
+
+פצל את ההודעה למשימות נפרדות — כל פעולה עצמאית שצריך לעשות היא משימה נפרדת (למשל "להתקשר לרינה ולשלוח דוח" = שתי משימות). אם יש רק דבר אחד לעשות, החזר משימה אחת.
+
+- נסח כל משימה קצר וברור, בעברית, בלשון ציווי או שם פועל (למשל "להתקשר לרינה"). השמט את משפט הפתיחה ("משימה לעצמי", "משימה למנהל המערכת" וכדומה) ומילות מילוי.
+- שמור על כל פרט חשוב שנאמר (שמות, מספרים, מה בדיוק לשלוח או לבדוק).
+- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (למשל "מחר", "ביום ראשון", "עד סוף החודש"); חשב אותו יחסית לתאריך היום שיצוין. אחרת null. תאריך שהוזכר חל רק על המשימה שהוא נאמר עליה, אלא אם ברור שהוא חל על כולן.
+- "monthly": true רק אם נאמר במפורש שהמשימה חוזרת כל חודש (למשל "כל חודש ב-1 לחודש"); אז "due_date" הוא המופע הקרוב. אחרת false.
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
+{ "tasks": [ { "text": "תיאור המשימה", "due_date": "YYYY-MM-DD" | null, "monthly": true | false } ] }`
+
+/** Pure: keeps only well-formed tasks; a monthly flag without a due date is dropped. */
+export function normalizeAdminTasks(parsed) {
+  return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
+    .filter(t => typeof t?.text === 'string' && normalizeText(t.text))
+    .map(t => {
+      const due_date = ISO_DATE.test(t.due_date || '') ? t.due_date : null
+      return { text: t.text.trim(), due_date, monthly: t.monthly === true && !!due_date }
+    })
+}
+
+/** today: 'YYYY-MM-DD' (Israel); weekday: e.g. "יום ה׳" — for resolving "ביום שלישי". */
+export async function analyzeAdminTasks(transcript, today, weekday) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: ADMIN_TASKS_PROMPT,
+    messages: [{ role: 'user', content: `תאריך היום: ${today} (${weekday})\n\nההודעה:\n${transcript}` }],
+  })
+
+  const text = responseText(response)
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  return normalizeAdminTasks(parsed)
+}

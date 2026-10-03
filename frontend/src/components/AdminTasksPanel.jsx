@@ -214,7 +214,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
   )
 }
 
-const SOURCE_LABEL = { admin_panel: 'נוסף', recurring: '🔁 נוצר' }
+const SOURCE_LABEL = { admin_panel: 'נוסף', recurring: '🔁 נוצר', voice_task: '🎙 הוכתב' }
 
 function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onToggle, onDelete }) {
   if (editing) {

@@ -33,7 +33,7 @@ function normalizeRecurrence(recurrence, due_date) {
 // Rows typed in this panel (or spawned by a recurring task) hold nothing but their task,
 // so removing the last task can delete the row. Anything else — a recorded voice log —
 // keeps its content and summary; only its tasks are cleared.
-const PANEL_ONLY_SOURCES = new Set(['admin_panel', 'recurring', 'whatsapp'])
+const PANEL_ONLY_SOURCES = new Set(['admin_panel', 'recurring', 'whatsapp', 'voice_task'])
 
 function itemsOf(row) {
   if (row.metadata?.tasks_cleared) return []
@@ -160,7 +160,7 @@ export function deleteAdminTask(task) {
   return updateItems(task.rowId, items => items.filter((_, i) => i !== task.index))
 }
 
-async function insertTaskRow({ contactId, text, due_date, recurrence, source }) {
+async function insertTaskRow({ contactId, text, due_date, recurrence, source, transcript }) {
   const clean = text.trim()
   const rec = normalizeRecurrence(recurrence, due_date)
   const { data, error } = await supabase.from('interactions').insert({
@@ -172,6 +172,7 @@ async function insertTaskRow({ contactId, text, due_date, recurrence, source }) 
       action_items: [{ text: clean, due_date: due_date || null, done: false, ...(rec && { recurrence: rec }) }],
       source: source || 'admin_panel',
       route: 'admin_task',
+      ...(transcript && { transcript }),
     },
   }).select('id').single()
   if (error) throw error
@@ -184,4 +185,36 @@ export async function addAdminTask({ text, due_date, recurrence }) {
   if (!contactId) throw new Error('רשומת מנהל המערכת לא נמצאה — נסה לרענן את העמוד')
   await insertTaskRow({ contactId, text, due_date, recurrence, source: 'admin_panel' })
   return contactId
+}
+
+// A recording that opens with "משימה לעצמי" / "משימה למנהל המערכת" — see
+// isAdminTaskRecording. Matched on the opening words only, so a call that merely
+// mentions a task later on still goes through the normal analyze + approval flow.
+const ADMIN_TASK_OPENING = /^(?:(?:זו|זאת|זוהי|יש|הנה)\s+)?(?:משימה|משימות)\s+(?:לעצמי|לי|אישית|שלי|ל?מנהל(?:\s+ה?מערכת)?|של\s+מנהל(?:\s+ה?מערכת)?)(?=$|[\s,.:;!?-])/
+
+export function isAdminTaskRecording(transcript) {
+  // Speech-to-text may start with punctuation or stray spaces — skip to the first letter.
+  const start = (transcript || '').replace(/^[^\p{L}]+/u, '')
+  return ADMIN_TASK_OPENING.test(start)
+}
+
+/**
+ * Saves a voice-dictated task list straight to "המשימות שלי" — one row per task, like
+ * addAdminTask, with the full transcript kept on each row. tasks: [{ text, due_date,
+ * monthly }] as /api/voice-log/admin-tasks returns them. Returns how many were saved.
+ */
+export async function addAdminTasksFromVoice(tasks, transcript) {
+  const contactId = await ensureAdminContact()
+  if (!contactId) throw new Error('רשומת מנהל המערכת לא נמצאה — נסה לרענן את העמוד')
+  for (const t of tasks) {
+    await insertTaskRow({
+      contactId,
+      text: t.text,
+      due_date: t.due_date,
+      recurrence: t.monthly ? { type: 'monthly' } : null,
+      source: 'voice_task',
+      transcript,
+    })
+  }
+  return tasks.length
 }

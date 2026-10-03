@@ -4,6 +4,7 @@ import { backendFetch } from '../lib/api.js'
 import { useSpeechToText } from '../hooks/useSpeechToText.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
 import { insertPendingVoiceLog } from '../lib/pendingVoiceLog.js'
+import { isAdminTaskRecording, addAdminTasksFromVoice } from '../lib/adminTasks.js'
 
 const MENTOR = 'אבנר'
 
@@ -41,8 +42,8 @@ export default function VoiceLog() {
     setJobs(prev => prev.filter(j => j.id !== id))
   }
 
-  function markDone(id) {
-    updateJob(id, { status: 'done' })
+  function markDone(id, doneMessage = '✓ נשמר, ממתין לאישור') {
+    updateJob(id, { status: 'done', doneMessage })
     // Auto-clear the confirmation row after a bit rather than piling up checkmarks
     // while the mentor keeps dictating and saving more calls back to back.
     setTimeout(() => removeJob(id), 4000)
@@ -71,8 +72,46 @@ export default function VoiceLog() {
     } catch (err) {
       updateJob(id, {
         status: 'error',
-        message: err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message,
+        message: errorMessage(err),
       })
+    }
+  }
+
+  function errorMessage(err) {
+    return err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message
+  }
+
+  function tasksSavedMessage(n) {
+    return n === 1 ? '✓ נשמרה משימה ב"המשימות שלי"' : `✓ נשמרו ${n} משימות ב"המשימות שלי"`
+  }
+
+  // A task for the admin ("משימה לעצמי ..."): no teacher, no interaction type, no
+  // approval queue — Claude only splits it into separate tasks (with due dates), and
+  // they go straight to the dashboard's "המשימות שלי" panel.
+  async function runAdminTasks(id, jobTranscript) {
+    try {
+      const { tasks } = await backendFetch('/api/voice-log/admin-tasks', {
+        method: 'POST',
+        body: JSON.stringify({ transcript: jobTranscript }),
+      })
+      // Nothing recognizable as a task — keep the whole recording as one, rather than drop it.
+      const toSave = tasks.length > 0 ? tasks : [{ text: jobTranscript.trim(), due_date: null, monthly: false }]
+      const n = await addAdminTasksFromVoice(toSave, jobTranscript)
+      markDone(id, tasksSavedMessage(n))
+    } catch (err) {
+      updateJob(id, { status: 'error', message: errorMessage(err) })
+    }
+  }
+
+  // Fallback when splitting fails (e.g. no connectivity) — the transcript is saved as is,
+  // as a single task, to be edited in the panel later.
+  async function saveJobAsSingleTask(job) {
+    updateJob(job.id, { status: 'processing', message: null })
+    try {
+      await addAdminTasksFromVoice([{ text: job.transcript.trim(), due_date: null, monthly: false }], job.transcript)
+      markDone(job.id, tasksSavedMessage(1))
+    } catch (err) {
+      updateJob(job.id, { status: 'error', message: 'שמירה נכשלה: ' + errorMessage(err) })
     }
   }
 
@@ -98,7 +137,7 @@ export default function VoiceLog() {
     } catch (err) {
       updateJob(job.id, {
         status: 'error',
-        message: 'שמירה נכשלה: ' + (err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message),
+        message: 'שמירה נכשלה: ' + errorMessage(err),
       })
     }
   }
@@ -107,14 +146,18 @@ export default function VoiceLog() {
   // immediately (not after the network call resolves), so the mic is free to record
   // the next message right away — the analyze/save work for this one keeps running
   // in the background independently, and several jobs can be in flight at once.
-  function analyze() {
+  // A recording that opens with "משימה לעצמי" / "משימה למנהל המערכת" is saved as tasks
+  // even when "סכם ושמור" was clicked; "שמור כמשימה" (asTask) forces it either way.
+  function analyze(asTask = false) {
     if (!transcript.trim()) return
     const jobTranscript = transcript
     stop()
     reset()
     const id = crypto.randomUUID()
-    setJobs(prev => [{ id, transcript: jobTranscript, status: 'processing', message: null }, ...prev])
-    runAnalyze(id, jobTranscript)
+    const kind = asTask || isAdminTaskRecording(jobTranscript) ? 'task' : 'log'
+    setJobs(prev => [{ id, kind, transcript: jobTranscript, status: 'processing', message: null }, ...prev])
+    if (kind === 'task') runAdminTasks(id, jobTranscript)
+    else runAnalyze(id, jobTranscript)
   }
 
   function startNewCall() {
@@ -168,7 +211,14 @@ export default function VoiceLog() {
           נקה
         </button>
         <button
-          onClick={analyze}
+          onClick={() => analyze(true)}
+          disabled={!transcript.trim()}
+          className="px-4 py-2 rounded-lg border border-green-600 text-green-700 hover:bg-green-50 disabled:opacity-40"
+        >
+          📝 שמור כמשימה
+        </button>
+        <button
+          onClick={() => analyze()}
           disabled={!transcript.trim()}
           className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
         >
@@ -176,13 +226,17 @@ export default function VoiceLog() {
         </button>
       </div>
 
+      <p className="text-sm text-gray-500 text-center" dir="rtl">
+        משימה לעצמך? פתח ב"משימה לעצמי" או "משימה למנהל המערכת" — היא תישמר ישר ב"המשימות שלי", בלי אישור.
+      </p>
+
       {jobs.length > 0 && (
         <div className="space-y-2">
           {jobs.map(job => (
             <div key={job.id} className="border border-gray-200 rounded-lg p-3 text-right" dir="rtl">
               <p className="text-sm text-gray-500 truncate">{job.transcript}</p>
               {job.status === 'processing' && <p className="text-blue-600">שומר...</p>}
-              {job.status === 'done' && <p className="text-green-700">✓ נשמר, ממתין לאישור</p>}
+              {job.status === 'done' && <p className="text-green-700">{job.doneMessage}</p>}
               {job.status === 'error' && (
                 <div className="space-y-2">
                   <p className="text-red-600">{job.message}</p>
@@ -190,17 +244,18 @@ export default function VoiceLog() {
                     <button
                       onClick={() => {
                         updateJob(job.id, { status: 'processing', message: null })
-                        runAnalyze(job.id, job.transcript)
+                        if (job.kind === 'task') runAdminTasks(job.id, job.transcript)
+                        else runAnalyze(job.id, job.transcript)
                       }}
                       className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100"
                     >
                       נסה שוב
                     </button>
                     <button
-                      onClick={() => saveJobAsPending(job)}
+                      onClick={() => (job.kind === 'task' ? saveJobAsSingleTask(job) : saveJobAsPending(job))}
                       className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100"
                     >
-                      שמור בלי סיכום
+                      {job.kind === 'task' ? 'שמור כמשימה אחת בלי פיצול' : 'שמור בלי סיכום'}
                     </button>
                   </div>
                 </div>

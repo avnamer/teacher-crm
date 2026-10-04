@@ -147,14 +147,14 @@ export default function VoiceLog() {
   // the next message right away — the analyze/save work for this one keeps running
   // in the background independently, and several jobs can be in flight at once.
   // A recording that opens with "משימה לעצמי" / "משימה למנהל המערכת" is saved as tasks
-  // even when "סכם ושמור" was clicked; "שמור כמשימה" (asTask) forces it either way.
-  function analyze(asTask = false) {
+  // instead of going to the approval queue.
+  function analyze() {
     if (!transcript.trim()) return
     const jobTranscript = transcript
     stop()
     reset()
     const id = crypto.randomUUID()
-    const kind = asTask || isAdminTaskRecording(jobTranscript) ? 'task' : 'log'
+    const kind = isAdminTaskRecording(jobTranscript) ? 'task' : 'log'
     setJobs(prev => [{ id, kind, transcript: jobTranscript, status: 'processing', message: null }, ...prev])
     if (kind === 'task') runAdminTasks(id, jobTranscript)
     else runAnalyze(id, jobTranscript)
@@ -211,14 +211,7 @@ export default function VoiceLog() {
           נקה
         </button>
         <button
-          onClick={() => analyze(true)}
-          disabled={!transcript.trim()}
-          className="px-4 py-2 rounded-lg border border-green-600 text-green-700 hover:bg-green-50 disabled:opacity-40"
-        >
-          📝 שמור כמשימה
-        </button>
-        <button
-          onClick={() => analyze()}
+          onClick={analyze}
           disabled={!transcript.trim()}
           className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
         >

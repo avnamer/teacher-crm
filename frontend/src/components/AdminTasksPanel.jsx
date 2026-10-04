@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
+import { typeIcon, typeLabel } from '../lib/interactions.js'
 import {
   fetchAdminTasks,
   setAdminTaskDone,
   editAdminTask,
   deleteAdminTask,
   addAdminTask,
+  unassignAdminTask,
 } from '../lib/adminTasks.js'
 
 // "המשימות שלי" — the system admin's personal tasks, at the top of the dashboard.
-// Tasks come from approved "משימה אישית לי" voice logs (and from the quick-add box
-// here). See lib/adminTasks.js for where they're stored.
+// Tasks come from approved "משימה אישית לי" voice logs, dictated "משימה לעצמי" voice
+// logs, WhatsApp, the quick-add box here — and Avner's own tasks out of teacher calls
+// and meetings (shown with the teacher's name; they stay on the teacher's page too).
+// See lib/adminTasks.js for where they're stored.
 
 const EXPANDED_KEY = 'adminTasksPanelExpanded'
 
@@ -61,12 +66,13 @@ function compareDone(a, b) {
 }
 
 function deleteConfirmText(task) {
+  if (task.kind === 'teacher') return `"${task.text}" — זו לא משימה שלך? היא תוסר מ"המשימות שלי" ותישאר רק בדף של המורה.`
   return task.recurrence && !task.done
     ? `למחוק את המשימה החוזרת "${task.text}"? היא לא תחזור יותר בחודשים הבאים.`
     : `למחוק את המשימה "${task.text}"?`
 }
 
-export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminContactCreated }) {
+export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminContactCreated, onChanged }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -102,12 +108,15 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
     try {
       await action()
       await load()
+      onChanged?.()
     } catch (err) {
       alert('הפעולה נכשלה: ' + (err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור' : err.message))
     } finally {
       setBusyKey(null)
     }
   }
+
+  const removeTask = task => (task.kind === 'teacher' ? unassignAdminTask(task) : deleteAdminTask(task))
 
   const open = tasks.filter(t => !t.done).sort(compareOpen)
   const done = tasks.filter(t => t.done).sort(compareDone)
@@ -179,7 +188,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
                 })}
                 onToggle={() => run(task.key, () => setAdminTaskDone(task, true))}
                 onDelete={() => {
-                  if (confirm(deleteConfirmText(task))) run(task.key, () => deleteAdminTask(task))
+                  if (confirm(deleteConfirmText(task))) run(task.key, () => removeTask(task))
                 }}
               />
             ))}
@@ -200,7 +209,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
                       editing={false}
                       onToggle={() => run(task.key, () => setAdminTaskDone(task, false))}
                       onDelete={() => {
-                        if (confirm(deleteConfirmText(task))) run(task.key, () => deleteAdminTask(task))
+                        if (confirm(deleteConfirmText(task))) run(task.key, () => removeTask(task))
                       }}
                     />
                   ))}
@@ -224,6 +233,7 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
           initialText={task.text}
           initialDue={task.due_date || ''}
           initialRecurring={!!task.recurrence}
+          allowRecurring={task.kind !== 'teacher'}
           submitLabel="שמור"
           busy={busy}
           onCancel={onCancelEdit}
@@ -266,12 +276,25 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
               🔁 כל חודש ב-{task.recurrence.day}
             </span>
           )}
+          {task.kind === 'teacher' ? (
+            <span className="text-xs text-gray-400">
+              {typeIcon(task.interaction_type)} {typeLabel(task.interaction_type)} עם{' '}
+              {task.teachers.map((t, i) => (
+                <span key={t.id}>
+                  {i > 0 && ', '}
+                  <Link to={`/contacts/${t.id}`} className="text-indigo-700 hover:underline">{t.name || 'מורה'}</Link>
+                </span>
+              ))}
+              {' · '}{new Date(task.created_at).toLocaleDateString('he-IL')}
+            </span>
+          ) : (
           <span className="text-xs text-gray-400">
             {task.source === 'whatsapp'
               ? `💬 וואטסאפ · ${task.whatsapp_contact_name || ''}`
               : (SOURCE_LABEL[task.source] || '🎙 הוקלט')}{' '}
             {new Date(task.created_at).toLocaleDateString('he-IL')}
           </span>
+          )}
         </div>
       </div>
       <div className="flex gap-1 shrink-0">
@@ -279,14 +302,19 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
           <button onClick={onStartEdit} disabled={busy} title="עריכה"
             className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100">✏️</button>
         )}
-        <button onClick={onDelete} disabled={busy} title="מחיקה"
-          className="p-1.5 rounded-lg text-gray-500 hover:bg-red-50">🗑️</button>
+        {task.kind === 'teacher' ? (
+          <button onClick={onDelete} disabled={busy} title="לא שלי — להשאיר רק בדף המורה"
+            className="px-1.5 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-100 whitespace-nowrap">לא שלי</button>
+        ) : (
+          <button onClick={onDelete} disabled={busy} title="מחיקה"
+            className="p-1.5 rounded-lg text-gray-500 hover:bg-red-50">🗑️</button>
+        )}
       </div>
     </li>
   )
 }
 
-function TaskForm({ initialText, initialDue, initialRecurring, submitLabel, busy, onCancel, onSubmit }) {
+function TaskForm({ initialText, initialDue, initialRecurring, allowRecurring = true, submitLabel, busy, onCancel, onSubmit }) {
   const [text, setText] = useState(initialText)
   const [due, setDue] = useState(initialDue)
   const [recurring, setRecurring] = useState(initialRecurring)
@@ -321,12 +349,14 @@ function TaskForm({ initialText, initialDue, initialRecurring, submitLabel, busy
         )}
       </div>
       <div className="flex items-center gap-2 flex-wrap">
+        {allowRecurring && (
         <label className={`text-xs flex items-center gap-1.5 ${due ? 'text-gray-700' : 'text-gray-400'}`}
           title={due ? '' : 'יש לבחור תאריך יעד קודם'}>
           <input type="checkbox" checked={recurring} disabled={!due}
             onChange={e => setRecurring(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
           🔁 חוזר כל חודש{due ? ` ב-${Number(due.slice(8, 10))} לחודש` : ''}
         </label>
+        )}
         <div className="flex gap-2 mr-auto">
           <button type="button" onClick={onCancel} disabled={busy}
             className="px-3 py-1.5 rounded-lg text-sm border border-gray-300 text-gray-600 hover:bg-gray-50">

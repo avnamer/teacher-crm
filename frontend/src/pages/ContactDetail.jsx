@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
-import { INTERACTION_TYPES, interactionIcon, interactionLabel, isSentMessage } from '../lib/interactions.js'
+import { INTERACTION_TYPES, ASSIGNEE_LABEL, interactionIcon, interactionLabel, isSentMessage } from '../lib/interactions.js'
 import WhatsAppMessageList from '../components/WhatsAppMessageList.jsx'
 import { isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL } from '../lib/teachers.js'
 
@@ -444,6 +444,9 @@ export default function ContactDetail() {
                                 <span className={item.done ? 'line-through text-gray-400' : 'text-gray-700'}>
                                   {item.text}
                                 </span>
+                                {ASSIGNEE_LABEL[item.assignee] && (
+                                  <span className="text-xs text-gray-400">{ASSIGNEE_LABEL[item.assignee]}</span>
+                                )}
                                 {item.due_date && (
                                   <span className="text-xs text-gray-400">
                                     📅 {new Date(item.due_date).toLocaleDateString('he-IL')}
@@ -623,6 +626,7 @@ function JournalTasksCard({ interactions, showDone, onToggleShowDone, onToggleIt
         <p className={`text-sm ${item.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.text}</p>
         <p className="text-xs text-gray-400 mt-0.5">
           {interactionIcon(interaction)} {interactionLabel(interaction)} · {new Date(interaction.created_at).toLocaleDateString('he-IL')}
+          {ASSIGNEE_LABEL[item.assignee] && <> · {ASSIGNEE_LABEL[item.assignee]}</>}
           {item.due_date && <> · 📅 יעד: {new Date(item.due_date).toLocaleDateString('he-IL')}</>}
         </p>
       </div>

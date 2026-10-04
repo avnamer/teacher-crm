@@ -70,6 +70,9 @@ export function typeIcon(type) {
   return INTERACTION_TYPES.find(t => t.value === type)?.icon || '📋'
 }
 
+/** Whose task an action item from a call/meeting analysis is (item.assignee). */
+export const ASSIGNEE_LABEL = { admin: '👤 שלי', both: '🤝 משותפת', teacher: '🧑‍🏫 של המורה' }
+
 export function typeLabel(type) {
   return INTERACTION_TYPES.find(t => t.value === type)?.label || type
 }

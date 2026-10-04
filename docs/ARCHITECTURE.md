@@ -41,7 +41,7 @@ tables or policies without an owner policy, and don't make any table publicly re
 | `/meetings` | `Meetings.jsx` | Scheduled + past meetings (from `interactions`, `type='meeting'`), one row per real-world meeting (grouped by `meeting_group_id`), school recency, edit (date/content/attendees)/delete |
 | `/whatsapp` | `WhatsApp.jsx` | Templates, bulk send via send queue, task-based recipient filter |
 | `/whatsapp-groups` | `WhatsAppGroups.jsx` | Which WhatsApp groups the extension syncs (`whatsapp_groups.sync_enabled`) |
-| `/voice-log` | `VoiceLog.jsx` | PWA voice dictation → AI analysis → `pending_voice_logs`; a recording opening with "משימה לעצמי" / "משימה למנהל המערכת" (or saved with "📝 שמור כמשימה") skips approval and goes straight to "המשימות שלי", split into tasks |
+| `/voice-log` | `VoiceLog.jsx` | PWA voice dictation → AI analysis → `pending_voice_logs`; a recording opening with "משימה לעצמי" / "משימה למנהל המערכת" skips approval and goes straight to "המשימות שלי", split into tasks |
 | `/mentors` | `Mentors.jsx` | Mentor directory |
 | `/settings` | `Settings.jsx` | Monday board, working hours, CSV import modal |
 | `/book/:contactId` | `BookMeeting.jsx` | Public booking page (outside the layout; uses legacy `meetings` table) |

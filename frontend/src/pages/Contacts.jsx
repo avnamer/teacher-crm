@@ -300,6 +300,8 @@ export default function Contacts() {
         else delete next[contactId]
         return next
       })
+      // The same task may also be listed in "המשימות שלי" (Avner's task from a call).
+      setAdminTasksReloadKey(k => k + 1)
     } catch (err) {
       alert('שגיאה בסימון המשימה: ' + err.message)
     }
@@ -535,6 +537,8 @@ export default function Contacts() {
         adminContactId={contacts.find(isAdminRow)?.id || null}
         reloadKey={adminTasksReloadKey}
         onAdminContactCreated={loadContacts}
+        // A task ticked there may be a teacher call's task — refresh the open-tasks banner.
+        onChanged={() => loadPendingTasks(contacts.filter(c => !isAdminRow(c)).map(c => c.id))}
       />
 
       <ContactStats

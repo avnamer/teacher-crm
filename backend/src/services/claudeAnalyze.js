@@ -24,11 +24,13 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
   "teacher_name_spoken": "השם שנאמר עבור המורה (רלוונטי רק ל-teacher_call), אחרת null",
   "communication_type": "phone_call" | "message_sent" | "correspondence" | "meeting" | null,
   "summary": "סיכום קצר של התוכן, 2-3 משפטים (לא רלוונטי ל-new_task_column)",
-  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
+  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך", "assignee": "admin" | "teacher" | "both" } ],
   "mentioned_dates": ["YYYY-MM-DD"],
   "column_label": "כותרת קצרה ותמציתית (2-5 מילים) לעמודת המשימה — רק ל-new_task_column, אחרת null"
 }
-אם לא הוזכר שם מורה, החזר "teacher_name_spoken": null. אם אין מטלות המשך, החזר "action_items": [].`
+אם לא הוזכר שם מורה, החזר "teacher_name_spoken": null. אם אין מטלות המשך, החזר "action_items": [].
+ב-"assignee" של כל מטלה ציין של מי היא: "admin" — המנטור (המדבר/הכותב, אבנר) צריך לעשות אותה; "teacher" — המורה צריך/ה לעשות אותה; "both" — מטלה משותפת לשניהם (למשל "לקבוע פגישת המשך", "נבדוק יחד"). נסח כל מטלה כך שיהיה ברור מה צריך לעשות.
+ב-route "admin_task" כל המטלות הן "admin".`
 
 const VALID_ROUTES = new Set(['teacher_call', 'admin_task', 'new_task_column', 'unclear'])
 const VALID_COMMUNICATION_TYPES = new Set(['phone_call', 'message_sent', 'correspondence', 'meeting'])
@@ -46,6 +48,24 @@ function responseText(response) {
     throw new Error('תשובה ריקה מ-Claude')
   }
   return text
+}
+
+const VALID_ACTION_ASSIGNEES = new Set(['admin', 'teacher', 'both'])
+
+/**
+ * Pure: action items of a call / meeting analysis. `assignee` says whose task it is —
+ * 'admin' (Avner) and 'both' are shown in the dashboard's "המשימות שלי" too (see
+ * frontend lib/adminTasks.js); anything unrecognized is left out of the item (null).
+ */
+export function normalizeActionItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter(i => typeof i?.text === 'string' && i.text.trim())
+    .map(({ assignee, ...rest }) => ({
+      ...rest,
+      text: rest.text.trim(),
+      due_date: rest.due_date || null,
+      ...(VALID_ACTION_ASSIGNEES.has(assignee) && { assignee }),
+    }))
 }
 
 function extractJson(text) {
@@ -81,7 +101,7 @@ export async function analyzeCallTranscript(transcript) {
       ? (VALID_COMMUNICATION_TYPES.has(parsed.communication_type) ? parsed.communication_type : null)
       : null,
     summary: parsed.summary ?? '',
-    action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    action_items: normalizeActionItems(parsed.action_items),
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
     column_label: parsed.column_label ?? null,
   }
@@ -97,10 +117,11 @@ const MEETING_NOTES_PROMPT = `אתה עוזר שמנתח תיעוד כתוב ש�
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
 {
   "summary": "סיכום קצר של הפגישה, 2-3 משפטים",
-  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
+  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך", "assignee": "admin" | "teacher" | "both" } ],
   "mentioned_dates": ["YYYY-MM-DD"]
 }
-תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].`
+תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].
+ב-"assignee" של כל מטלה ציין של מי היא: "admin" — המנטור (המדבר/הכותב, אבנר) צריך לעשות אותה; "teacher" — המורה צריך/ה לעשות אותה; "both" — מטלה משותפת לשניהם (למשל "לקבוע פגישת המשך", "נבדוק יחד"). נסח כל מטלה כך שיהיה ברור מה צריך לעשות.`
 
 export async function analyzeMeetingNotes(content, meetingDate) {
   const response = await anthropic.messages.create({
@@ -121,7 +142,7 @@ export async function analyzeMeetingNotes(content, meetingDate) {
 
   return {
     summary: parsed.summary ?? '',
-    action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    action_items: normalizeActionItems(parsed.action_items),
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
   }
 }
@@ -138,12 +159,13 @@ const MERGE_MEETINGS_PROMPT = `אתה עוזר שמאחד כמה רשומות ת
 {
   "content": "תיעוד מאוחד ומלא של הפגישה, בגוף ראשון כמו הרשומות המקוריות, מחולק לפסקאות לפי נושא",
   "summary": "סיכום קצר של הפגישה, 2-3 משפטים",
-  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך" } ],
+  "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך", "assignee": "admin" | "teacher" | "both" } ],
   "mentioned_dates": ["YYYY-MM-DD"],
   "sources": [ { "record": 1, "taken": "משפט או שניים: איזה מידע מהרשומה הזו נכנס לתיעוד המאוחד, ומה ממנה הוחלף בפרט מעודכן מרשומה מאוחרת יותר (אם בכלל)" } ]
 }
 ב-"sources" החזר פריט אחד לכל רשומה, לפי המספר שלה. אם רשומה לא תרמה שום מידע חדש, כתוב זאת במפורש.
-תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].`
+תאריכים יחסיים (למשל "בשבוע הבא", "ביום ראשון") חשב לפי תאריך הפגישה שיצוין. אם אין מטלות המשך, החזר "action_items": [].
+ב-"assignee" של כל מטלה ציין של מי היא: "admin" — המנטור (המדבר/הכותב, אבנר) צריך לעשות אותה; "teacher" — המורה צריך/ה לעשות אותה; "both" — מטלה משותפת לשניהם (למשל "לקבוע פגישת המשך", "נבדוק יחד"). נסח כל מטלה כך שיהיה ברור מה צריך לעשות.`
 
 export async function mergeMeetingNotes(notes, meetingDate) {
   const numbered = notes.map((note, i) => `רשומה ${i + 1}:\n${note}`).join('\n\n---\n\n')
@@ -167,7 +189,7 @@ export async function mergeMeetingNotes(notes, meetingDate) {
   return {
     content: parsed.content.trim(),
     summary: parsed.summary ?? '',
-    action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+    action_items: normalizeActionItems(parsed.action_items),
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
     sources: Array.isArray(parsed.sources) ? parsed.sources : [],
   }
@@ -249,4 +271,81 @@ export async function analyzeWhatsAppTasks({ teacherName, conversation, existing
     throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
   }
   return normalizeWhatsAppTasks(parsed, messageDates)
+}
+
+// ─── Voice-dictated tasks for the admin ────────────────────────────────────
+// A recording that opens with "משימה לעצמי" / "משימה למנהל המערכת" (or that the user
+// saved with the "שמור כמשימה" button) is known to be a task list for Avner himself —
+// no teacher, no interaction type, no approval queue. Only the split into separate
+// tasks and their due dates is left for Claude.
+const ADMIN_TASKS_PROMPT = `אתה עוזר שמקבל תמלול של הודעה קולית שהקליט אבנר (מנטור של מורים) כדי לרשום משימות לעצמו.
+
+פצל את ההודעה למשימות נפרדות — כל פעולה עצמאית שצריך לעשות היא משימה נפרדת (למשל "להתקשר לרינה ולשלוח דוח" = שתי משימות). אם יש רק דבר אחד לעשות, החזר משימה אחת.
+
+- נסח כל משימה קצר וברור, בעברית, בלשון ציווי או שם פועל (למשל "להתקשר לרינה"). השמט את משפט הפתיחה ("משימה לעצמי", "משימה למנהל המערכת" וכדומה) ומילות מילוי.
+- שמור על כל פרט חשוב שנאמר (שמות, מספרים, מה בדיוק לשלוח או לבדוק).
+- "due_date" — רק אם הוזכר תאריך או תאריך יחסי (למשל "מחר", "ביום ראשון", "עד סוף החודש"); חשב אותו יחסית לתאריך היום שיצוין. אחרת null. תאריך שהוזכר חל רק על המשימה שהוא נאמר עליה, אלא אם ברור שהוא חל על כולן.
+- "monthly": true רק אם נאמר במפורש שהמשימה חוזרת כל חודש (למשל "כל חודש ב-1 לחודש"); אז "due_date" הוא המופע הקרוב. אחרת false.
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
+{ "tasks": [ { "text": "תיאור המשימה", "due_date": "YYYY-MM-DD" | null, "monthly": true | false } ] }`
+
+/** Pure: keeps only well-formed tasks; a monthly flag without a due date is dropped. */
+export function normalizeAdminTasks(parsed) {
+  return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
+    .filter(t => typeof t?.text === 'string' && normalizeText(t.text))
+    .map(t => {
+      const due_date = ISO_DATE.test(t.due_date || '') ? t.due_date : null
+      return { text: t.text.trim(), due_date, monthly: t.monthly === true && !!due_date }
+    })
+}
+
+/** today: 'YYYY-MM-DD' (Israel); weekday: e.g. "יום ה׳" — for resolving "ביום שלישי". */
+export async function analyzeAdminTasks(transcript, today, weekday) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: ADMIN_TASKS_PROMPT,
+    messages: [{ role: 'user', content: `תאריך היום: ${today} (${weekday})\n\nההודעה:\n${transcript}` }],
+  })
+
+  const text = responseText(response)
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  return normalizeAdminTasks(parsed)
+}
+
+// ─── Whose task — for action items saved before `assignee` existed ──────────
+// One-time backfill (scripts/action-items-assignee-backfill.mjs): given a call/meeting
+// record and its open action items, decide for each whether it's Avner's, the
+// teacher's, or shared.
+const ASSIGNEE_BACKFILL_PROMPT = `אתה עוזר שמקבל תיעוד של שיחה או פגישה בין אבנר (מנטור של מורים) לבין מורה אחד או יותר, ורשימה ממוספרת של מטלות המשך שנרשמו ממנה.
+
+לכל מטלה קבע של מי היא: "admin" — אבנר צריך לעשות אותה; "teacher" — המורה צריך/ה לעשות אותה; "both" — מטלה משותפת לשניהם (למשל "לקבוע פגישת המשך", "נבדוק יחד"). היעזר בתיעוד ובניסוח המטלה. התיעוד נכתב בדרך כלל בגוף ראשון של אבנר ("אני אשלח" = admin).
+
+החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו, עם פריט אחד לכל מטלה לפי הסדר:
+{ "assignees": ["admin" | "teacher" | "both"] }`
+
+export async function classifyActionItemAssignees({ record, teacherNames, items }) {
+  const list = items.map((t, i) => `${i + 1}. ${t}`).join('\n')
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: ASSIGNEE_BACKFILL_PROMPT,
+    messages: [{ role: 'user', content: `המורים: ${teacherNames.join(', ') || 'לא ידוע'}\n\nהתיעוד:\n${record || '(אין תיעוד)'}\n\nהמטלות:\n${list}` }],
+  })
+  const text = responseText(response)
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(text))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  const assignees = Array.isArray(parsed.assignees) ? parsed.assignees : []
+  return items.map((_, i) => (VALID_ACTION_ASSIGNEES.has(assignees[i]) ? assignees[i] : null))
 }

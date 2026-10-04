@@ -11,6 +11,7 @@ import {
   mergeOrCreateMeeting,
 } from '../lib/voiceLogActions.js'
 import { deletePendingVoiceLog } from '../lib/pendingVoiceLog.js'
+import { ASSIGNEE_LABEL } from '../lib/interactions.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
 
 function formatRecordedAt(iso) {
@@ -319,6 +320,9 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
                 {item.action_items.map((actionItem, i) => (
                   <li key={i} className="flex items-center gap-2 text-sm">
                     <span className="flex-1">{actionItem.text}</span>
+                    {route === 'teacher_call' && ASSIGNEE_LABEL[actionItem.assignee] && (
+                      <span className="text-xs text-gray-500">{ASSIGNEE_LABEL[actionItem.assignee]}</span>
+                    )}
                     {actionItem.due_date && <span className="text-gray-500">📅 {actionItem.due_date}</span>}
                   </li>
                 ))}

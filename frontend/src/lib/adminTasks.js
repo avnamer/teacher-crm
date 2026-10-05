@@ -77,6 +77,7 @@ async function fetchOwnAdminTasks(adminContactId) {
       created_at: row.created_at,
       source: row.metadata?.source || null,
       whatsapp_contact_name: row.metadata?.whatsapp_contact_name || null,
+      whatsapp_contact_id: row.metadata?.whatsapp_contact_id || null,
     }))
   )
 }
@@ -165,6 +166,7 @@ async function fetchTeacherLinkedTasks(adminContactId) {
         created_at: first.created_at,
         source: 'teacher',
         interaction_type: first.type,
+        row_source: first.metadata?.source || null,
         teachers: groupRows.map(r => ({
           id: r.contact_id,
           name: contactById[r.contact_id]?.name || '',

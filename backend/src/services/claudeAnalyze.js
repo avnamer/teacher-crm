@@ -349,3 +349,30 @@ export async function classifyActionItemAssignees({ record, teacherNames, items 
   const assignees = Array.isArray(parsed.assignees) ? parsed.assignees : []
   return items.map((_, i) => (VALID_ACTION_ASSIGNEES.has(assignees[i]) ? assignees[i] : null))
 }
+
+// ─── Short summary for the Schools page's meeting history ──────────────────
+// The Schools page lists a school's calls, meetings and WhatsApp days as one timeline,
+// each with a 2-3 line summary. Records analysed when saved already have
+// metadata.summary; for the rest (older records, WhatsApp days) the page asks for one
+// here once and stores it on the record (metadata.history_summary), so it's not
+// recomputed on every visit.
+const HISTORY_SUMMARY_PROMPT = `אתה מסכם תיעוד של שיחה, פגישה או יום התכתבות בוואטסאפ בין אבנר (מנטור של מורים) לבין מורה או בית ספר.
+כתוב סיכום קצר בעברית, 2-3 משפטים לכל היותר, עם הנקודות המהותיות: על מה דיברו, מה הוחלט, בקשות ומשימות שעלו.
+החזר אך ורק את הסיכום עצמו — בלי מבוא, בלי כותרת, בלי גרשיים, בלי טקסט נוסף.`
+
+// Long WhatsApp days can run to many thousands of characters; the start and end of a
+// conversation carry what a 3-line summary needs.
+const HISTORY_SUMMARY_MAX_CHARS = 40000
+
+export async function summarizeForHistory(text) {
+  const input = text.length > HISTORY_SUMMARY_MAX_CHARS
+    ? `${text.slice(0, HISTORY_SUMMARY_MAX_CHARS / 2)}\n…\n${text.slice(-HISTORY_SUMMARY_MAX_CHARS / 2)}`
+    : text
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: HISTORY_SUMMARY_PROMPT,
+    messages: [{ role: 'user', content: input }],
+  })
+  return responseText(response).trim()
+}

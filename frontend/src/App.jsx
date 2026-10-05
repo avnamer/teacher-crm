@@ -6,6 +6,7 @@ import ContactDetail from './pages/ContactDetail.jsx'
 import WhatsApp from './pages/WhatsApp.jsx'
 import WhatsAppGroups from './pages/WhatsAppGroups.jsx'
 import Meetings from './pages/Meetings.jsx'
+import Schools from './pages/Schools.jsx'
 import Settings from './pages/Settings.jsx'
 import VoiceLog from './pages/VoiceLog.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -21,6 +22,7 @@ function App() {
           <Route path="/whatsapp" element={<WhatsApp />} />
           <Route path="/whatsapp-groups" element={<WhatsAppGroups />} />
           <Route path="/meetings" element={<Meetings />} />
+          <Route path="/schools" element={<Schools />} />
           <Route path="/voice-log" element={<VoiceLog />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<NotFound />} />

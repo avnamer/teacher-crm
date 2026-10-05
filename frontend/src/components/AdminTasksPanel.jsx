@@ -53,11 +53,12 @@ function dueStatus(due) {
   return 'future'
 }
 
-// Open tasks: dated ones first (earliest due first), then undated (newest first).
+// Open tasks: undated ones first (newest first), then dated ones at the end of the list
+// (earliest due first, the furthest due date last).
 function compareOpen(a, b) {
   if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
-  if (a.due_date) return -1
-  if (b.due_date) return 1
+  if (a.due_date) return 1
+  if (b.due_date) return -1
   return b.created_at.localeCompare(a.created_at)
 }
 
@@ -284,6 +285,10 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
                   {i > 0 && ', '}
                   <Link to={`/contacts/${t.id}`} className="text-indigo-700 hover:underline">{t.name || 'מורה'}</Link>
                 </span>
+              ))}
+              {/* each school once — a meeting's attendees are often from the same school */}
+              {[...new Set(task.teachers.map(t => t.school).filter(Boolean))].map(school => (
+                <span key={school}>{' · '}{school}</span>
               ))}
               {' · '}{new Date(task.created_at).toLocaleDateString('he-IL')}
             </span>

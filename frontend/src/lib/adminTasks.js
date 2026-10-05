@@ -137,10 +137,10 @@ async function fetchTeacherLinkedTasks(adminContactId) {
 
   const { data: contacts, error } = await supabase
     .from('contacts')
-    .select('id, name')
+    .select('id, name, school')
     .in('id', [...new Set(rows.map(r => r.contact_id))])
   if (error) throw error
-  const nameById = Object.fromEntries((contacts || []).map(c => [c.id, c.name]))
+  const contactById = Object.fromEntries((contacts || []).map(c => [c.id, c]))
 
   const groups = {}
   for (const row of rows) (groups[row.metadata?.meeting_group_id || row.id] ??= []).push(row)
@@ -165,7 +165,11 @@ async function fetchTeacherLinkedTasks(adminContactId) {
         created_at: first.created_at,
         source: 'teacher',
         interaction_type: first.type,
-        teachers: groupRows.map(r => ({ id: r.contact_id, name: nameById[r.contact_id] || '' })),
+        teachers: groupRows.map(r => ({
+          id: r.contact_id,
+          name: contactById[r.contact_id]?.name || '',
+          school: contactById[r.contact_id]?.school || '',
+        })),
       }]
     })
   })

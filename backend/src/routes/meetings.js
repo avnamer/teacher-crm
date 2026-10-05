@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { analyzeMeetingNotes, mergeMeetingNotes } from '../services/claudeAnalyze.js'
+import { analyzeMeetingNotes, mergeMeetingNotes, summarizeForHistory } from '../services/claudeAnalyze.js'
 
 const router = Router()
 
@@ -31,6 +31,21 @@ router.post('/merge', async (req, res) => {
   } catch (err) {
     console.error('[meetings/merge]', err)
     res.status(500).json({ message: 'איחוד הפגישות נכשל: ' + err.message })
+  }
+})
+
+// POST /api/meetings/short-summary — 2-3 line summary of one history record (Schools page)
+router.post('/short-summary', async (req, res) => {
+  const text = String(req.body?.text || '').trim()
+  if (!text) {
+    return res.status(400).json({ message: 'לא התקבל תוכן לסיכום' })
+  }
+  try {
+    const summary = await summarizeForHistory(text)
+    res.json({ summary })
+  } catch (err) {
+    console.error('[meetings/short-summary]', err)
+    res.status(500).json({ message: 'יצירת הסיכום נכשלה: ' + err.message })
   }
 })
 

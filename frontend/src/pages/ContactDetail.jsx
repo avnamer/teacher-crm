@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { INTERACTION_TYPES, ASSIGNEE_LABEL, interactionIcon, interactionLabel, isSentMessage } from '../lib/interactions.js'
 import WhatsAppMessageList from '../components/WhatsAppMessageList.jsx'
+import TeamsCard from '../components/TeamsCard.jsx'
 import { isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL } from '../lib/teachers.js'
 
 function daysSince(dateStr) {
@@ -359,6 +360,17 @@ export default function ContactDetail() {
           </div>
         )}
       </div>
+
+      {/* Competition teams — edited only here; the Schools page reads them */}
+      <TeamsCard
+        contact={contact}
+        onSaved={custom_fields => {
+          setContact(prev => ({ ...prev, custom_fields }))
+          // Only the team keys — the details form may hold unsaved WhatsApp-sync edits.
+          const { teams, teaches_other_school } = custom_fields
+          setForm(prev => ({ ...prev, custom_fields: { ...prev.custom_fields, teams, teaches_other_school } }))
+        }}
+      />
 
       {/* Dashboard task columns — done vs. not done for this teacher */}
       <DashboardTasksCard

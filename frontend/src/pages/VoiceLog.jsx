@@ -219,10 +219,6 @@ export default function VoiceLog() {
         </button>
       </div>
 
-      <p className="text-sm text-gray-500 text-center" dir="rtl">
-        משימה לעצמך? פתח ב"משימה לעצמי" או "משימה למנהל המערכת" — היא תישמר ישר ב"המשימות שלי", בלי אישור.
-      </p>
-
       {jobs.length > 0 && (
         <div className="space-y-2">
           {jobs.map(job => (

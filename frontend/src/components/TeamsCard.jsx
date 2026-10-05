@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { isAdminRow } from '../lib/teachers.js'
 import {
-  MAX_TEAMS, teamsOf, teachesOtherSchool, teamSchool, formatTeam, gradeOptions, allSchools, sortGrades,
+  MAX_TEAMS, GRADES, teamsOf, teachesOtherSchool, teamSchool, formatTeam, gradesOf, allSchools, sortGrades,
 } from '../lib/teams.js'
 
 // The teacher's teams ("נבחרות") on her page — the only place they're edited (see
@@ -15,7 +15,6 @@ export default function TeamsCard({ contact, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [rows, setRows] = useState([])
   const [otherSchool, setOtherSchool] = useState(false)
-  const [grades, setGrades] = useState([])
   const [schools, setSchools] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -26,19 +25,18 @@ export default function TeamsCard({ contact, onSaved }) {
 
   async function startEdit() {
     setRows(teams.map(t => ({
-      grade: t.grade || '',
+      grades: gradesOf(t),
       students: t.students ?? '',
       school: (multiSchool && t.school) || '', // '' = the primary school
     })))
     setOtherSchool(multiSchool)
     setError('')
     setEditing(true)
-    // Picker options come from every teacher, so a grade or school added on one teacher
-    // is offered on the next one with the exact same spelling.
+    // School options come from every teacher, so a school added on one teacher is
+    // offered on the next one with the exact same spelling.
     const { data, error: loadErr } = await supabase.from('contacts').select('school, custom_fields')
-    if (loadErr) { console.error('Error loading grade/school options:', loadErr); return }
+    if (loadErr) { console.error('Error loading school options:', loadErr); return }
     const others = (data || []).filter(c => !isAdminRow(c))
-    setGrades(gradeOptions([...others, contact]))
     setSchools(allSchools([...others, contact]))
   }
 
@@ -46,12 +44,11 @@ export default function TeamsCard({ contact, onSaved }) {
     setRows(prev => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
 
-  function pickGrade(i, value) {
-    if (value !== NEW_OPTION) return updateRow(i, { grade: value })
-    const typed = prompt('שם השכבה החדשה (למשל: ו\' או י\'):')?.trim()
-    if (!typed) return
-    setGrades(prev => (prev.includes(typed) ? prev : sortGrades([...prev, typed])))
-    updateRow(i, { grade: typed })
+  // A mixed-age class is one team marked with several grades.
+  function toggleGrade(i, grade) {
+    const current = rows[i].grades
+    setError('')
+    updateRow(i, { grades: sortGrades(current.includes(grade) ? current.filter(g => g !== grade) : [...current, grade]) })
   }
 
   function pickSchool(i, value) {
@@ -63,12 +60,12 @@ export default function TeamsCard({ contact, onSaved }) {
   }
 
   async function save() {
-    if (rows.some(r => !r.grade)) return setError('יש לבחור שכבה לכל נבחרת')
+    if (rows.some(r => r.grades.length === 0)) return setError('יש לסמן לפחות שכבה אחת לכל נבחרת')
     if (rows.some(r => r.students !== '' && (!Number.isInteger(Number(r.students)) || Number(r.students) < 0))) {
       return setError('מספר תלמידים צריך להיות מספר שלם')
     }
     const nextTeams = rows.map(r => ({
-      grade: r.grade,
+      grades: r.grades,
       students: r.students === '' ? null : Number(r.students),
       // A team in the primary school carries no school of its own — see lib/teams.js.
       ...(otherSchool && r.school && r.school !== contact.school && { school: r.school }),
@@ -134,13 +131,20 @@ export default function TeamsCard({ contact, onSaved }) {
           {rows.map((row, i) => (
             <div key={i} className="flex flex-wrap items-end gap-2 p-2 rounded-lg bg-gray-50">
               <div>
-                <label className="block text-xs text-gray-500">שכבה</label>
-                <select value={row.grade} onChange={e => pickGrade(i, e.target.value)}
-                  className="px-2 py-1.5 border rounded-lg text-sm bg-white">
-                  <option value="">בחר…</option>
-                  {[...new Set([...grades, ...(row.grade ? [row.grade] : [])])].map(g => <option key={g} value={g}>{g}</option>)}
-                  <option value={NEW_OPTION}>+ שכבה אחרת</option>
-                </select>
+                <label className="block text-xs text-gray-500">שכבה (אפשר לסמן כמה)</label>
+                <div className="flex gap-1">
+                  {[...new Set([...GRADES, ...row.grades])].map(g => {
+                    const on = row.grades.includes(g)
+                    return (
+                      <button key={g} type="button" onClick={() => toggleGrade(i, g)} aria-pressed={on}
+                        className={`w-10 py-1.5 rounded-lg border text-sm font-medium ${
+                          on ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+                        }`}>
+                        {g}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-500">מספר תלמידים</label>
@@ -169,7 +173,7 @@ export default function TeamsCard({ contact, onSaved }) {
           ))}
 
           {rows.length < MAX_TEAMS && (
-            <button onClick={() => setRows(prev => [...prev, { grade: '', students: '', school: '' }])}
+            <button onClick={() => setRows(prev => [...prev, { grades: [], students: '', school: '' }])}
               className="text-sm text-blue-600 hover:underline">
               + הוסף נבחרת
             </button>

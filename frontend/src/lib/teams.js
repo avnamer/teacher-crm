@@ -1,7 +1,7 @@
 // A teacher's competition teams ("נבחרות") and which school each one belongs to.
 //
 // Stored on the teacher's own contact row — custom_fields.teams, an array of up to
-// MAX_TEAMS { grade, students, school? } — and edited only on the teacher's page
+// MAX_TEAMS { grades, students, school? } — and edited only on the teacher's page
 // (components/TeamsCard.jsx). The Schools page reads it from there; nothing is copied.
 //
 // A team's school: most teachers teach in one school, so a team normally has no school
@@ -12,10 +12,11 @@
 
 export const MAX_TEAMS = 3
 
-export const DEFAULT_GRADES = ["ז'", "ח'", "ט'"]
+// The grades a team can be marked with. A team can combine several (a mixed-age
+// class), so `grades` is an array — toggle buttons on the teacher page, no free text.
+export const GRADES = ["ז'", "ח'", "ט'"]
 
-// School order of the grades, for sorting the grade picker. A custom grade typed in by
-// hand (not in this list) sorts after all of these, alphabetically.
+// School order of the grades, so a mixed class always reads "ז'+ח'", never "ח'+ז'".
 const GRADE_ORDER = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ז'", "ח'", "ט'", "י'", 'י"א', 'י"ב']
 
 function gradeRank(grade) {
@@ -62,19 +63,18 @@ export function studentCount(team) {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-/** "ז' (12 תלמידים)" — or just "ז'" when no student count was entered. */
+/** The team's grades in school order. Reads the single `grade` string of the first version too. */
+export function gradesOf(team) {
+  const grades = Array.isArray(team?.grades) ? team.grades : team?.grade ? [team.grade] : []
+  return sortGrades(new Set(grades.filter(Boolean)))
+}
+
+/** "ז' (12 תלמידים)", "ז'+ח' (14 תלמידים)" — or just the grades when no student count was entered. */
 export function formatTeam(team) {
-  const grade = team?.grade || 'ללא שכבה'
+  const grade = gradesOf(team).join('+') || 'ללא שכבה'
   const n = studentCount(team)
   if (!n) return grade
   return `${grade} (${n === 1 ? 'תלמיד אחד' : `${n} תלמידים`})`
-}
-
-/** Grade picker options: the defaults plus any grade already used on some teacher. */
-export function gradeOptions(contacts) {
-  const grades = new Set(DEFAULT_GRADES)
-  for (const c of contacts || []) for (const team of teamsOf(c)) if (team.grade) grades.add(team.grade)
-  return sortGrades(grades)
 }
 
 /** Every school name in use — teachers' primary schools and their teams' schools. */

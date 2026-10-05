@@ -286,6 +286,10 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
                   <Link to={`/contacts/${t.id}`} className="text-indigo-700 hover:underline">{t.name || 'מורה'}</Link>
                 </span>
               ))}
+              {/* each school once — a meeting's attendees are often from the same school */}
+              {[...new Set(task.teachers.map(t => t.school).filter(Boolean))].map(school => (
+                <span key={school}>{' · '}{school}</span>
+              ))}
               {' · '}{new Date(task.created_at).toLocaleDateString('he-IL')}
             </span>
           ) : (

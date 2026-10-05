@@ -192,21 +192,12 @@ export function adminTasksForSchool(tasks, { school, teachers, allTeachers }) {
 }
 
 // ─── Section D: meeting history ─────────────────────────────────────────────
-// A "meeting" here is any real conversation with the teacher: a held meeting
-// (scheduled / not-held ones are left out), a phone call, a two-way correspondence,
-// and a day of the teacher's private WhatsApp chat — the sync already stores one row
-// per teacher per day, so a WhatsApp day is one entry, never one per message. Voice
-// recordings are saved as one of these types, so they're included too. Left out: one-way
-// sends (a message or mailing nobody answered), dashboard journal notes, and WhatsApp
-// group chats (shared by teachers of several schools, and stored once per member).
-
-const HISTORY_TYPES = new Set(['meeting', 'phone_call', 'correspondence', 'whatsapp'])
+// Only interactions of type 'meeting' that were actually held (scheduled / not-held
+// ones are left out). Phone calls, correspondence, WhatsApp chats, journal notes and
+// one-way sends are not shown here — they stay on the teacher's own page.
 
 export function isHistoryRecord(row) {
-  if (!HISTORY_TYPES.has(row.type)) return false
-  if (row.type === 'meeting') return isCompletedMeeting(row)
-  if (row.type === 'whatsapp') return row.metadata?.source !== 'group' && row.metadata?.messages?.length > 0
-  return true
+  return row.type === 'meeting' && isCompletedMeeting(row)
 }
 
 /** Every interaction of the given teachers, newest first (paged past the 1000-row API limit). */

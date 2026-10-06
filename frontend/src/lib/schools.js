@@ -218,23 +218,13 @@ export async function loadInteractions(contactIds) {
   }
 }
 
-function whatsAppText(metadata) {
-  return (metadata?.messages || []).map(m => {
-    const who = m.sender === 'me' ? 'אבנר' : 'המורה'
-    const text = m.kind === 'voice' ? `🎤 ${m.transcript || m.summary || 'הודעה קולית'}` : (m.text || m.mediaLabel || '')
-    return `${who}: ${text}`
-  }).join('\n')
-}
-
 /** The record's full text — what the summary is made from. */
 export function historyText(item) {
-  const [first] = item.rows
-  if (first.type === 'whatsapp') return whatsAppText(first.metadata)
   return item.rows.map(r => r.content?.trim()).find(Boolean) || ''
 }
 
 // Cheap content fingerprint: a cached summary is reused only while the text it was made
-// from is unchanged (a WhatsApp day keeps growing during the day; a meeting can be edited).
+// from is unchanged (a meeting can be edited).
 export function fingerprint(text) {
   let h = 5381
   for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0
@@ -252,7 +242,7 @@ const SHORT_TEXT_WORDS = 45
 export function storedSummary(item) {
   const text = historyText(item)
   for (const row of item.rows) {
-    if (row.type !== 'whatsapp' && row.metadata?.summary?.trim()) return row.metadata.summary.trim()
+    if (row.metadata?.summary?.trim()) return row.metadata.summary.trim()
   }
   const fp = fingerprint(text)
   for (const row of item.rows) {

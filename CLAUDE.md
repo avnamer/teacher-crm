@@ -73,6 +73,21 @@ Cloud sessions push to a `claude/*` branch and the user then checks it on their 
 - Never put secrets in git; if the task needs a new env var, say so in the summary and
   add it to the relevant `.env.example`.
 
+### Trigger phrase: "נמשיך מהמחשב"
+When the user says this in a session on their PC (not a cloud session), do all of this
+without asking, then reply in Hebrew:
+1. `git fetch origin`, then `git status` of the main checkout. Report any uncommitted
+   changes (they may belong to another session) — don't touch them.
+2. Find the newest `origin/claude/*` branch and summarize in a few lines what it
+   changed vs `origin/main` (commits + files) and whether it has an open PR.
+3. Start `node scripts/check-from-phone.mjs` in the background (`run_in_background`).
+   If port 5173 is busy, tell the user which process holds it instead of killing it.
+4. Once both servers are up, give the local URL and a short checklist of what to click
+   to verify the change.
+5. If `frontend/.env.local` or `backend/.env` is missing, say exactly which values
+   (names only, from the `.env.example` files) the user must fill in.
+Then wait for the user's feedback; further edits go on that branch per the usual rules.
+
 ## Project structure
 
 - `frontend/` — React + Vite, deployed to Netlify (`comforting-pegasus-780af0.netlify.app`)

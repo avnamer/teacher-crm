@@ -74,8 +74,20 @@ Cloud sessions push to a `claude/*` branch and the user then checks it on their 
   add it to the relevant `.env.example`.
 
 ### Trigger phrase: "נמשיך מהמחשב"
-When the user says this in a session on their PC (not a cloud session), do all of this
-without asking, then reply in Hebrew:
+A cloud session cannot move to the user's PC, so the phrase means different things
+depending on where it is said. Check `CLAUDE_CODE_REMOTE=true` (cloud) vs. not (PC).
+
+**In a cloud/phone session = "hand off" — do all of this without asking:**
+1. Finish or cleanly stop the current work; commit your own files (scoped `git add`).
+2. Push the branch. Open a PR against `main` if none exists (don't merge it).
+3. Never answer "I can't continue on your PC". Reply in Hebrew with a handoff note:
+   branch name, PR link, 2-4 lines on what changed, what is still open, what to check.
+4. End with the exact PC steps: open Claude Code in the `teacher-crm` folder and say
+   "נמשיך מהמחשב" (or run `node scripts/check-from-phone.mjs` yourself).
+   Tell the user that `claude --teleport` (or `/teleport`) can also pull this very
+   session into the PC terminal.
+
+**In a PC session = "pick up" — do all of this without asking, then reply in Hebrew:**
 1. `git fetch origin`, then `git status` of the main checkout. Report any uncommitted
    changes (they may belong to another session) — don't touch them.
 2. Find the newest `origin/claude/*` branch and summarize in a few lines what it

@@ -1,7 +1,7 @@
 // A teacher's competition teams ("נבחרות") and which school each one belongs to.
 //
 // Stored on the teacher's own contact row — custom_fields.teams, an array of up to
-// MAX_TEAMS { grades, students, school? } — and edited only on the teacher's page
+// MAX_TEAMS { grades, students, school?, schedule?, prep? } — and edited only on the teacher's page
 // (components/TeamsCard.jsx). The Schools page reads it from there; nothing is copied.
 //
 // A team's school: most teachers teach in one school, so a team normally has no school
@@ -82,4 +82,44 @@ export function allSchools(contacts) {
   const schools = new Set()
   for (const c of contacts || []) for (const s of teacherSchools(c)) schools.add(s)
   return [...schools].sort((a, b) => a.localeCompare(b, 'he'))
+}
+
+// ── Teaching days ─────────────────────────────────────────────────────────────
+// team.schedule (lessons) and team.prep (preparation lessons) are the same shape: an
+// object { [dayIndex]: [periods] } — dayIndex 0 = Sunday … 5 = Friday, periods are the
+// hour numbers 1..MAX_PERIOD ticked for that day. A day with no periods is simply absent.
+
+export const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
+export const MAX_PERIOD = 8
+export const PERIODS = Array.from({ length: MAX_PERIOD }, (_, i) => i + 1)
+
+/** Normalised plan: { [dayIndex]: sorted unique periods }, empty days dropped. Tolerates missing/garbage input. */
+export function planOf(plan) {
+  const out = {}
+  if (!plan || typeof plan !== 'object') return out
+  for (const [day, periods] of Object.entries(plan)) {
+    if (!(Number(day) in DAYS) || !Array.isArray(periods)) continue
+    const clean = [...new Set(periods.map(Number).filter(p => Number.isInteger(p) && p >= 1 && p <= MAX_PERIOD))].sort((a, b) => a - b)
+    if (clean.length) out[Number(day)] = clean
+  }
+  return out
+}
+
+/** "2–3" for consecutive hours, "1, 3" otherwise — "שעות 2–3", "שעה 5". */
+function formatPeriods(periods) {
+  const runs = []
+  for (const p of periods) {
+    const last = runs[runs.length - 1]
+    if (last && p === last[1] + 1) last[1] = p
+    else runs.push([p, p])
+  }
+  const text = runs.map(([a, b]) => (a === b ? `${a}` : b === a + 1 ? `${a}, ${b}` : `${a}–${b}`)).join(', ')
+  return `${periods.length === 1 ? 'שעה' : 'שעות'} ${text}`
+}
+
+/** "יום ב׳: שעות 2–3 · יום ד׳: שעה 5" — '' when nothing is marked. */
+export function formatPlan(plan) {
+  const p = planOf(plan)
+  return Object.keys(p).map(Number).sort((a, b) => a - b)
+    .map(d => `יום ${DAYS[d]}: ${formatPeriods(p[d])}`).join(' · ')
 }

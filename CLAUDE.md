@@ -87,7 +87,7 @@ depending on where it is said. Check `CLAUDE_CODE_REMOTE=true` (cloud) vs. not (
    Tell the user that `claude --teleport` (or `/teleport`) can also pull this very
    session into the PC terminal.
 
-**In a PC session = "pick up" — do all of this without asking, then reply in Hebrew:**
+**In a PC session = "pick up"** — use the `continue-from-phone` skill (`.claude/skills/continue-from-phone/`); in short, do all of this without asking, then reply in Hebrew:
 1. `git fetch origin`, then `git status` of the main checkout. Report any uncommitted
    changes (they may belong to another session) — don't touch them.
 2. Find the newest `origin/claude/*` branch and summarize in a few lines what it

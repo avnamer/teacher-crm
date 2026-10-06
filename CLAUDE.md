@@ -62,6 +62,44 @@ A code fix that never deployed will look identical to a bug that wasn't fixed, f
 the user's side — this caused significant back-and-forth in a past session before
 the real cause (paused deploys) was found.
 
+## Work started from the phone / cloud sessions
+
+Cloud sessions push to a `claude/*` branch and the user then checks it on their PC.
+- The user runs `node scripts/check-from-phone.mjs` (see the script header) — it
+  fetches, uses a separate worktree, copies the `.env` files, installs and starts
+  both servers. Don't change it in a way that needs manual steps afterwards.
+- **Finish every cloud task with a short Hebrew summary**: what changed, which branch,
+  and what to click/check on the PC. Never leave the user to dig through the diff.
+- Never put secrets in git; if the task needs a new env var, say so in the summary and
+  add it to the relevant `.env.example`.
+
+### Trigger phrase: "נמשיך מהמחשב"
+A cloud session cannot move to the user's PC, so the phrase means different things
+depending on where it is said. Check `CLAUDE_CODE_REMOTE=true` (cloud) vs. not (PC).
+
+**In a cloud/phone session = "hand off" — do all of this without asking:**
+1. Finish or cleanly stop the current work; commit your own files (scoped `git add`).
+2. Push the branch. Open a PR against `main` if none exists (don't merge it).
+3. Never answer "I can't continue on your PC". Reply in Hebrew with a handoff note:
+   branch name, PR link, 2-4 lines on what changed, what is still open, what to check.
+4. End with the exact PC steps: open Claude Code in the `teacher-crm` folder and say
+   "נמשיך מהמחשב" (or run `node scripts/check-from-phone.mjs` yourself).
+   Tell the user that `claude --teleport` (or `/teleport`) can also pull this very
+   session into the PC terminal.
+
+**In a PC session = "pick up"** — use the `continue-from-phone` skill (`.claude/skills/continue-from-phone/`); in short, do all of this without asking, then reply in Hebrew:
+1. `git fetch origin`, then `git status` of the main checkout. Report any uncommitted
+   changes (they may belong to another session) — don't touch them.
+2. Find the newest `origin/claude/*` branch and summarize in a few lines what it
+   changed vs `origin/main` (commits + files) and whether it has an open PR.
+3. Start `node scripts/check-from-phone.mjs` in the background (`run_in_background`).
+   If port 5173 is busy, tell the user which process holds it instead of killing it.
+4. Once both servers are up, give the local URL and a short checklist of what to click
+   to verify the change.
+5. If `frontend/.env.local` or `backend/.env` is missing, say exactly which values
+   (names only, from the `.env.example` files) the user must fill in.
+Then wait for the user's feedback; further edits go on that branch per the usual rules.
+
 ## Project structure
 
 - `frontend/` — React + Vite, deployed to Netlify (`comforting-pegasus-780af0.netlify.app`)

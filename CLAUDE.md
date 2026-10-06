@@ -62,6 +62,17 @@ A code fix that never deployed will look identical to a bug that wasn't fixed, f
 the user's side — this caused significant back-and-forth in a past session before
 the real cause (paused deploys) was found.
 
+## Work started from the phone / cloud sessions
+
+Cloud sessions push to a `claude/*` branch and the user then checks it on their PC.
+- The user runs `node scripts/check-from-phone.mjs` (see the script header) — it
+  fetches, uses a separate worktree, copies the `.env` files, installs and starts
+  both servers. Don't change it in a way that needs manual steps afterwards.
+- **Finish every cloud task with a short Hebrew summary**: what changed, which branch,
+  and what to click/check on the PC. Never leave the user to dig through the diff.
+- Never put secrets in git; if the task needs a new env var, say so in the summary and
+  add it to the relevant `.env.example`.
+
 ## Project structure
 
 - `frontend/` — React + Vite, deployed to Netlify (`comforting-pegasus-780af0.netlify.app`)

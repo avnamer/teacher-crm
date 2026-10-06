@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { isAdminRow } from '../lib/teachers.js'
 import {
   MAX_TEAMS, GRADES, teamsOf, teachesOtherSchool, teamSchool, formatTeam, gradesOf, allSchools, sortGrades,
+  DAYS, PERIODS, planOf, formatPlan,
 } from '../lib/teams.js'
 
 // The teacher's teams ("נבחרות") on her page — the only place they're edited (see
@@ -10,6 +11,42 @@ import {
 // contact-details form, and only ever writes custom_fields.teams / teaches_other_school.
 
 const NEW_OPTION = '__new__'
+
+// Days × hours 1..8; tapping a cell ticks that hour (a lesson can span several hours).
+function PeriodGrid({ label, plan, onToggle }) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <div className="overflow-x-auto">
+        <table className="text-sm border-separate border-spacing-1">
+          <thead>
+            <tr>
+              <th />
+              {PERIODS.map(p => <th key={p} className="w-9 text-xs font-normal text-gray-500">{p}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {DAYS.map((day, d) => (
+              <tr key={d}>
+                <td className="pe-2 text-xs text-gray-600 whitespace-nowrap">{day}</td>
+                {PERIODS.map(p => {
+                  const on = (plan[d] || []).includes(p)
+                  return (
+                    <td key={p}>
+                      <button type="button" onClick={() => onToggle(d, p)} aria-pressed={on}
+                        aria-label={`${day} שעה ${p}`}
+                        className={`w-9 h-7 rounded border ${on ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300 hover:bg-gray-100'}`} />
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 
 export default function TeamsCard({ contact, onSaved }) {
   const [editing, setEditing] = useState(false)
@@ -28,6 +65,8 @@ export default function TeamsCard({ contact, onSaved }) {
       grades: gradesOf(t),
       students: t.students ?? '',
       school: (multiSchool && t.school) || '', // '' = the primary school
+      schedule: planOf(t.schedule),
+      prep: planOf(t.prep),
     })))
     setOtherSchool(multiSchool)
     setError('')
@@ -51,6 +90,15 @@ export default function TeamsCard({ contact, onSaved }) {
     updateRow(i, { grades: sortGrades(current.includes(grade) ? current.filter(g => g !== grade) : [...current, grade]) })
   }
 
+  // Tick/untick one hour on one day of a team's lessons ('schedule') or prep lessons ('prep').
+  function togglePeriod(i, key, day, period) {
+    const plan = rows[i][key]
+    const current = plan[day] || []
+    const next = current.includes(period) ? current.filter(p => p !== period) : [...current, period].sort((a, b) => a - b)
+    const { [day]: _removed, ...rest } = plan
+    updateRow(i, { [key]: next.length ? { ...rest, [day]: next } : rest })
+  }
+
   function pickSchool(i, value) {
     if (value !== NEW_OPTION) return updateRow(i, { school: value })
     const typed = prompt('שם בית הספר החדש (כדאי לבדוק שהוא לא קיים כבר ברשימה בכתיב אחר):')?.trim()
@@ -68,6 +116,8 @@ export default function TeamsCard({ contact, onSaved }) {
       grades: r.grades,
       students: r.students === '' ? null : Number(r.students),
       // A team in the primary school carries no school of its own — see lib/teams.js.
+      ...(Object.keys(r.schedule).length && { schedule: r.schedule }),
+      ...(Object.keys(r.prep).length && { prep: r.prep }),
       ...(otherSchool && r.school && r.school !== contact.school && { school: r.school }),
     }))
     setSaving(true)
@@ -110,11 +160,15 @@ export default function TeamsCard({ contact, onSaved }) {
         teams.length === 0 ? (
           <p className="text-sm text-gray-500">לא הוגדרו נבחרות</p>
         ) : (
-          <ul className="flex flex-wrap gap-2">
+          <ul className="space-y-2">
             {teams.map((team, i) => (
-              <li key={i} className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-sm text-amber-800">
-                {formatTeam(team)}
-                {multiSchool && <span className="text-amber-600"> · {teamSchool(contact, team) || 'ללא בית ספר'}</span>}
+              <li key={i}>
+                <span className="inline-block px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                  {formatTeam(team)}
+                  {multiSchool && <span className="text-amber-600"> · {teamSchool(contact, team) || 'ללא בית ספר'}</span>}
+                </span>
+                {formatPlan(team.schedule) && <p className="text-sm text-gray-600 mt-1">📅 {formatPlan(team.schedule)}</p>}
+                {formatPlan(team.prep) && <p className="text-sm text-gray-600">📝 הכנה — {formatPlan(team.prep)}</p>}
               </li>
             ))}
           </ul>
@@ -129,7 +183,8 @@ export default function TeamsCard({ contact, onSaved }) {
           {rows.length === 0 && <p className="text-sm text-gray-500">אין נבחרות. אפשר להוסיף עד {MAX_TEAMS}.</p>}
 
           {rows.map((row, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-2 p-2 rounded-lg bg-gray-50">
+            <div key={i} className="p-2 rounded-lg bg-gray-50 space-y-3">
+             <div className="flex flex-wrap items-end gap-2">
               <div>
                 <label className="block text-xs text-gray-500">שכבה (אפשר לסמן כמה)</label>
                 <div className="flex gap-1">
@@ -169,11 +224,14 @@ export default function TeamsCard({ contact, onSaved }) {
                 className="px-2 py-1.5 text-sm text-gray-400 hover:text-red-600" title="מחק נבחרת">
                 🗑️
               </button>
+             </div>
+             <PeriodGrid label="ימי לימוד ושעות" plan={row.schedule} onToggle={(d, p) => togglePeriod(i, 'schedule', d, p)} />
+             <PeriodGrid label="שיעור הכנה" plan={row.prep} onToggle={(d, p) => togglePeriod(i, 'prep', d, p)} />
             </div>
           ))}
 
           {rows.length < MAX_TEAMS && (
-            <button onClick={() => setRows(prev => [...prev, { grades: [], students: '', school: '' }])}
+            <button onClick={() => setRows(prev => [...prev, { grades: [], students: '', school: '', schedule: {}, prep: {} }])}
               className="text-sm text-blue-600 hover:underline">
               + הוסף נבחרת
             </button>

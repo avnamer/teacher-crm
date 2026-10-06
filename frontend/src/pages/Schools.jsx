@@ -9,7 +9,6 @@ import {
   schoolTeachers, similarSchoolNames, openTeacherTasks, closeTeacherTask, adminTasksForSchool, TASK_SOURCE,
   loadInteractions, buildHistory, storedSummary, generateHistorySummary, historyText,
 } from '../lib/schools.js'
-import WhatsAppMessageList from '../components/WhatsAppMessageList.jsx'
 
 // One school on one screen: its teachers and their teams, the dashboard tasks they
 // haven't done, their open small tasks (and the admin's tasks about them), and the
@@ -383,7 +382,7 @@ function HistorySection({ school, rows, contacts, pool }) {
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
                       <span className="text-lg" title={typeLabel(first.type)}>{interactionIcon(first)}</span>
                       <span className="font-medium text-gray-800">{formatDate(item.date)}</span>
-                      <span className="text-gray-500">{typeLabel(first.type)}{first.type === 'whatsapp' ? ' (סיכום יום)' : ''}</span>
+                      <span className="text-gray-500">{typeLabel(first.type)}</span>
                       <span className="text-gray-700">· עם {names.length ? names.join(', ') : 'בית הספר'}</span>
                       <span className={`mr-auto text-xs text-gray-400 transition-transform ${isOpen ? '-rotate-90' : ''}`}>◀</span>
                     </div>
@@ -398,9 +397,7 @@ function HistorySection({ school, rows, contacts, pool }) {
                   {isOpen && (
                     <div className="px-3 pb-3 border-t border-gray-200 pt-2">
                       <p className="text-xs font-medium text-gray-500 mb-1">התוכן המלא:</p>
-                      {first.type === 'whatsapp'
-                        ? <WhatsAppMessageList metadata={first.metadata} />
-                        : <p className="text-sm text-gray-700 whitespace-pre-wrap">{historyText(item) || 'אין תוכן כתוב'}</p>}
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{historyText(item) || 'אין תוכן כתוב'}</p>
                       <div className="flex flex-wrap gap-3 mt-2 text-xs">
                         {item.teacherIds.map(id => contactsById[id] && (
                           <Link key={id} to={`/contacts/${id}`} className="text-blue-600 hover:underline">לכרטיס של {contactsById[id].name}</Link>

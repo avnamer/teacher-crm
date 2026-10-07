@@ -330,6 +330,11 @@ export function buildHistory(rows, { school, contactsById, contactsByName }) {
 
 const NOTE_TYPES = new Set(['whatsapp', 'phone_call', 'correspondence', 'journal'])
 const NOTE_SHORT_WORDS = 30
+const NOTE_MAX_SHORT_SENTENCES = 2
+// Bump the prefix when the note prompt changes, so old cached notes are regenerated.
+const noteFingerprint = text => fingerprint(`v2:${text}`)
+const sentenceCount = text => text.split(/[.!?؟]+(?:\s|$)|
++/).filter(p => p.trim()).length
 
 export const NOTE_SOURCE = {
   whatsapp: { label: 'וואטסאפ', icon: '💬' },
@@ -381,8 +386,8 @@ export function buildNotes(rows, { contactsById, lastMeetingDate }) {
 /** Sentence(s) to show without calling the AI: a cached one, or a text short enough to read as is. null = needs generating. */
 export function storedNote(note) {
   const meta = note.row.metadata || {}
-  if (meta.note_summary && meta.note_summary_of === fingerprint(note.text)) return meta.note_summary
-  if (note.text.split(/\s+/).filter(Boolean).length <= NOTE_SHORT_WORDS) return note.text
+  if (meta.note_summary && meta.note_summary_of === noteFingerprint(note.text)) return meta.note_summary
+  if (note.text.split(/\s+/).filter(Boolean).length <= NOTE_SHORT_WORDS && sentenceCount(note.text) <= NOTE_MAX_SHORT_SENTENCES) return note.text
   return null
 }
 
@@ -396,7 +401,7 @@ export async function generateNoteSummary(note) {
   if (loadErr || !fresh) { console.error('[note summary] load', loadErr); return summary }
   const { error } = await supabase
     .from('interactions')
-    .update({ metadata: { ...(fresh.metadata || {}), note_summary: summary, note_summary_of: fingerprint(note.text) } })
+    .update({ metadata: { ...(fresh.metadata || {}), note_summary: summary, note_summary_of: noteFingerprint(note.text) } })
     .eq('id', note.row.id)
   if (error) console.error('[note summary] save', error)
   return summary

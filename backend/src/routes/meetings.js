@@ -34,14 +34,15 @@ router.post('/merge', async (req, res) => {
   }
 })
 
-// POST /api/meetings/short-summary — 2-3 line summary of one history record (Schools page)
+// POST /api/meetings/short-summary — 2-3 line summary of one history record (Schools page);
+// `brief: true` gives the 1-2 sentence version used for the sticky notes
 router.post('/short-summary', async (req, res) => {
   const text = String(req.body?.text || '').trim()
   if (!text) {
     return res.status(400).json({ message: 'לא התקבל תוכן לסיכום' })
   }
   try {
-    const summary = await summarizeForHistory(text)
+    const summary = await summarizeForHistory(text, { brief: req.body?.brief === true })
     res.json({ summary })
   } catch (err) {
     console.error('[meetings/short-summary]', err)

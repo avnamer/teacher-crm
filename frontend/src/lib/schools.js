@@ -320,3 +320,88 @@ export function buildHistory(rows, { school, contactsById, contactsByName }) {
     })
     .sort((a, b) => new Date(b.date) - new Date(a.date))
 }
+
+
+// ─── Section: sticky notes — what we talked about since the last meeting ────
+// One note per private chat day (WhatsApp DM), call, correspondence or journal entry
+// with one of the school's teachers, newer than the school's last held meeting (or all
+// of them if there was none). A note is one or two sentences, generated once and cached
+// on the row (metadata.note_summary).
+
+const NOTE_TYPES = new Set(['whatsapp', 'phone_call', 'correspondence', 'journal'])
+const NOTE_SHORT_WORDS = 30
+const NOTE_MAX_SHORT_SENTENCES = 2
+// Bump the prefix when the note prompt changes, so old cached notes are regenerated.
+const noteFingerprint = text => fingerprint(`v2:${text}`)
+const sentenceCount = text => text.split(/[.!?]+(?:\s|$)|\n+/).filter(p => p.trim()).length
+
+export const NOTE_SOURCE = {
+  whatsapp: { label: 'וואטסאפ', icon: '💬' },
+  recording: { label: 'הקלטה', icon: '🎙' },
+  phone_call: { label: 'שיחת טלפון', icon: '📞' },
+  other: { label: 'התכתבות / יומן', icon: '📜' },
+}
+
+const israelDay = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })
+
+function noteSource(row) {
+  if (row.type === 'whatsapp') return 'whatsapp'
+  if (row.metadata?.source === 'voice_pwa') return 'recording'
+  if (row.type === 'phone_call') return 'phone_call'
+  return 'other'
+}
+
+/** The text a note is made from. A WhatsApp row's `content` is only a preview line — the chat is in `messages`. */
+export function noteText(row, teacherName) {
+  if (row.type === 'whatsapp') {
+    const lines = (row.metadata?.messages || []).map(m => {
+      const body = (m.text || m.transcript || m.summary || '').trim()
+      return body ? `${m.sender === 'me' ? 'אבנר' : teacherName || 'המורה'}: ${body}` : ''
+    }).filter(Boolean)
+    if (lines.length) return lines.join('\n')
+  }
+  return (row.content || '').trim()
+}
+
+/**
+ * Notes for the school's teachers, newest first. `lastMeetingDate` (ISO or null) is the
+ * school's last held meeting — only records from later days count.
+ */
+export function buildNotes(rows, { contactsById, lastMeetingDate }) {
+  const cutoff = lastMeetingDate ? israelDay(lastMeetingDate) : null
+  const notes = []
+  for (const row of rows) {
+    if (!NOTE_TYPES.has(row.type)) continue
+    if (row.type === 'whatsapp' && row.metadata?.source === 'group') continue
+    if (cutoff && israelDay(row.created_at) <= cutoff) continue
+    const teacher = contactsById[row.contact_id]
+    const text = noteText(row, teacher?.name)
+    if (!text) continue
+    notes.push({ key: row.id, row, text, date: row.created_at, teacherName: teacher?.name || '', source: noteSource(row) })
+  }
+  return notes.sort((a, b) => new Date(b.date) - new Date(a.date))
+}
+
+/** Sentence(s) to show without calling the AI: a cached one, or a text short enough to read as is. null = needs generating. */
+export function storedNote(note) {
+  const meta = note.row.metadata || {}
+  if (meta.note_summary && meta.note_summary_of === noteFingerprint(note.text)) return meta.note_summary
+  if (note.text.split(/\s+/).filter(Boolean).length <= NOTE_SHORT_WORDS && sentenceCount(note.text) <= NOTE_MAX_SHORT_SENTENCES) return note.text
+  return null
+}
+
+export async function generateNoteSummary(note) {
+  const { summary } = await backendFetch('/api/meetings/short-summary', {
+    method: 'POST',
+    body: JSON.stringify({ text: note.text, brief: true }),
+  })
+  const { data: fresh, error: loadErr } = await supabase
+    .from('interactions').select('metadata').eq('id', note.row.id).maybeSingle()
+  if (loadErr || !fresh) { console.error('[note summary] load', loadErr); return summary }
+  const { error } = await supabase
+    .from('interactions')
+    .update({ metadata: { ...(fresh.metadata || {}), note_summary: summary, note_summary_of: noteFingerprint(note.text) } })
+    .eq('id', note.row.id)
+  if (error) console.error('[note summary] save', error)
+  return summary
+}

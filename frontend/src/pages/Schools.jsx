@@ -8,6 +8,7 @@ import { allSchools, teacherSchools, teamsInSchool, studentCount, formatTeam } f
 import {
   schoolTeachers, similarSchoolNames, openTeacherTasks, closeTeacherTask, adminTasksForSchool, TASK_SOURCE,
   loadInteractions, buildHistory, storedSummary, generateHistorySummary, historyText,
+  buildNotes, storedNote, generateNoteSummary, NOTE_SOURCE,
 } from '../lib/schools.js'
 
 // One school on one screen: its teachers and their teams, the dashboard tasks they
@@ -15,6 +16,13 @@ import {
 // meeting history. Reads existing data only — see lib/schools.js.
 
 const HISTORY_PAGE = 10
+const NOTES_PAGE = 8
+
+// Sticky-note colors, cycled; the slight tilt alternates.
+const NOTE_COLORS = [
+  'bg-yellow-200', 'bg-pink-200', 'bg-sky-200', 'bg-green-200', 'bg-orange-200', 'bg-purple-200',
+]
+const NOTE_TILTS = ['rotate-1', '-rotate-1', '-rotate-2', 'rotate-2']
 
 function formatDate(iso) {
   return iso ? new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''
@@ -128,6 +136,7 @@ export default function Schools() {
                 adminTasks={base.adminTasks}
                 onChanged={() => setReloadKey(k => k + 1)}
               />
+              <NotesSection key={`notes-${school}`} rows={rows} school={school} contacts={contacts} pool={pool} />
               <HistorySection key={school} school={school} rows={rows} contacts={contacts} pool={pool} />
             </>
           )}
@@ -413,6 +422,90 @@ function HistorySection({ school, rows, contacts, pool }) {
             <button onClick={() => setVisible(v => v + HISTORY_PAGE)}
               className="mt-3 w-full py-2 rounded-lg border border-gray-200 text-sm text-blue-700 hover:bg-gray-50">
               הצג עוד ({items.length - visible} נוספות)
+            </button>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
+
+// ─── ה. Sticky notes: what we talked about since the last meeting ───────────
+
+function NotesSection({ rows, school, contacts, pool }) {
+  const [visible, setVisible] = useState(NOTES_PAGE)
+  const [active, setActive] = useState(null) // note tapped open (touch screens have no hover)
+  const [generated, setGenerated] = useState({})
+  const inFlight = useRef(new Set())
+
+  const contactsById = useMemo(() => Object.fromEntries(contacts.map(c => [c.id, c])), [contacts])
+  const contactsByName = useMemo(() => Object.fromEntries(pool.map(c => [c.name, c])), [pool])
+  const lastMeetingDate = useMemo(
+    () => buildHistory(rows, { school, contactsById, contactsByName })[0]?.date || null,
+    [rows, school, contactsById, contactsByName]
+  )
+  const notes = useMemo(() => buildNotes(rows, { contactsById, lastMeetingDate }), [rows, contactsById, lastMeetingDate])
+  const shown = useMemo(() => notes.slice(0, visible), [notes, visible])
+
+  useEffect(() => {
+    const missing = shown.filter(n => storedNote(n) === null && !inFlight.current.has(n.key))
+    if (missing.length === 0) return
+    missing.forEach(n => inFlight.current.add(n.key))
+    ;(async () => {
+      for (const note of missing) {
+        try {
+          const summary = await generateNoteSummary(note)
+          setGenerated(prev => ({ ...prev, [note.key]: summary }))
+        } catch (err) {
+          console.error('[note summary]', err)
+          setGenerated(prev => ({ ...prev, [note.key]: { error: err.message } }))
+        }
+      }
+    })()
+  }, [shown])
+
+  return (
+    <Card
+      title="🗒 על מה דיברנו לאחרונה"
+      aside={<span className="text-sm text-gray-500">
+        {lastMeetingDate ? `מאז הפגישה האחרונה (${formatDate(lastMeetingDate)})` : 'מאז תחילת ההתכתבות'}
+      </span>}
+    >
+      {notes.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          {lastMeetingDate ? 'לא היו שיחות או התכתבויות מאז הפגישה האחרונה' : 'אין עדיין שיחות או התכתבויות מתועדות'}
+        </p>
+      ) : (
+        <>
+          <ul className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-2">
+            {shown.map((note, i) => {
+              const stored = storedNote(note)
+              const gen = generated[note.key]
+              const sentence = stored ?? (typeof gen === 'string' ? gen : null)
+              const src = NOTE_SOURCE[note.source]
+              return (
+                <li key={note.key} onClick={() => setActive(a => (a === note.key ? null : note.key))}
+                  className={`group relative min-h-28 p-3 pb-8 shadow-md cursor-pointer transition-transform hover:rotate-0 hover:scale-105 hover:z-10
+                    ${NOTE_COLORS[i % NOTE_COLORS.length]} ${NOTE_TILTS[i % NOTE_TILTS.length]}`}>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                    {sentence !== null
+                      ? sentence
+                      : gen?.error
+                        ? <span className="text-red-600">לא ניתן היה ליצור סיכום</span>
+                        : <span className="text-gray-500">⏳ מכין סיכום…</span>}
+                  </p>
+                  <div className={`absolute inset-x-0 bottom-0 px-3 py-1 text-xs text-gray-700 bg-black/10
+                    ${active === note.key ? 'block' : 'hidden group-hover:block'}`}>
+                    {note.teacherName} · {formatDate(note.date)} · {src.icon} {src.label}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+          {notes.length > visible && (
+            <button onClick={() => setVisible(v => v + NOTES_PAGE)}
+              className="mt-3 w-full py-2 rounded-lg border border-gray-200 text-sm text-blue-700 hover:bg-gray-50">
+              הצג עוד ({notes.length - visible} נוספות)
             </button>
           )}
         </>

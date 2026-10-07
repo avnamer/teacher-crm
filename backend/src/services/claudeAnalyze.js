@@ -364,14 +364,19 @@ const HISTORY_SUMMARY_PROMPT = `אתה מסכם תיעוד של שיחה, פגי
 // conversation carry what a 3-line summary needs.
 const HISTORY_SUMMARY_MAX_CHARS = 40000
 
-export async function summarizeForHistory(text) {
+// A sticky note on the Schools page: one or two sentences about a single chat/call.
+const NOTE_SUMMARY_PROMPT = `אתה מסכם שיחה או התכתבות בין אבנר (מנטור של מורים) לבין מורה, כדי שיוכל להיזכר בה לפני פגישה בבית הספר.
+כתוב משפט אחד או שניים בעברית — על מה דיברו, מה עלה, מה סוכם או התבקש. כתוב ישר לעניין, בגוף שלישי, בלי "המורה ואבנר דיברו על".
+החזר אך ורק את הסיכום — בלי מבוא, בלי כותרת, בלי גרשיים, בלי טקסט נוסף.`
+
+export async function summarizeForHistory(text, { brief = false } = {}) {
   const input = text.length > HISTORY_SUMMARY_MAX_CHARS
     ? `${text.slice(0, HISTORY_SUMMARY_MAX_CHARS / 2)}\n…\n${text.slice(-HISTORY_SUMMARY_MAX_CHARS / 2)}`
     : text
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: MAX_TOKENS,
-    system: HISTORY_SUMMARY_PROMPT,
+    system: brief ? NOTE_SUMMARY_PROMPT : HISTORY_SUMMARY_PROMPT,
     messages: [{ role: 'user', content: input }],
   })
   return responseText(response).trim()

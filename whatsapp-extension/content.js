@@ -16,7 +16,7 @@
 // "still seeing the old error" report can be checked in 2 seconds instead of
 // guessing whether the extension+tab reload actually picked up the latest
 // code (this has been the actual cause more than once during testing).
-const CONTENT_JS_BUILD = '2026-10-01-32'
+const CONTENT_JS_BUILD = '2026-10-07-33'
 console.log(`%c[whatsapp-sync] content.js loaded — build ${CONTENT_JS_BUILD}`, 'color: #2563eb; font-weight: bold')
 
 // Confirmed live (2026-09-29): WhatsApp's virtualized list only responds to
@@ -746,9 +746,20 @@ async function readCurrentDM(contactId, teacherName, lastMessageAt) {
   }
 }
 
+// A management group ("קבוצת הנהלה"): every message goes to the backend with its sender
+// name; the backend keeps only the task-givers' and extracts tasks. No teacher matching.
+async function syncManagementGroup(group) {
+  const rawMessages = await collectMessages(null, group.lastMessageAt)
+  if (rawMessages.length === 0) return
+  await toBackground('saveManagementMessages', {
+    groupId: group.groupId, groupName: group.name, messages: rawMessages,
+  })
+}
+
 async function syncGroup(group, teachers) {
   const opened = await openChatByName(group.name)
   if (!opened) throw new Error('לא נמצאה הקבוצה "' + group.name + '"')
+  if (group.isManagement) return syncManagementGroup(group)
 
   // Every group message needs its own sender resolved (spec §3.1.1), and my own
   // messages only count when they're a reply to an already-matched teacher.

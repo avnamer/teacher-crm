@@ -376,3 +376,62 @@ export async function summarizeForHistory(text) {
   })
   return responseText(response).trim()
 }
+
+// ─── Tasks from management WhatsApp groups ──────────────────────────────────
+// The messages passed here were already filtered to the task-givers (Benny / Mika), so
+// every line is theirs. The only question left is whether a line is a task that reaches
+// Avner: addressed to all mentors, or to Avner by name.
+const MANAGEMENT_TASKS_PROMPT = `אתה עוזר שמנתח הודעות מקבוצת וואטסאפ של הנהלת תוכנית מנטורים. ההודעות נכתבו על ידי חברי הנהלה (בני / מיקה). המשתמש, אבנר, הוא מנטור בתוכנית.
+
+חלץ רק משימות שמגיעות אל אבנר:
+- "audience": "all" — משימה או בקשה שמופנית לכל המנטורים (למשל "מנטורים יקרים, נא למלא את הטופס עד יום ה׳", "כל המנטורים - לשלוח דוח"). אבנר כלול בהם.
+- "audience": "me" — משימה שמופנית לאבנר בשמו, בכינוי מהרשימה שיצוינה, או בתגובה (reply) אליו.
+
+אל תחזיר: משימות שמופנות למנטור אחר בשמו, הודעות מידע/עדכון שאין בהן מה לעשות, ברכות, שיחת חולין, ומשימות של ההנהלה עצמה. משימה היא בקשה קונקרטית לעשות משהו (למלא, לשלוח, להגיע, לעדכן, לבדוק).
+
+- "message_id" — המזהה שמופיע בתחילת השורה ממנה עלתה המשימה.
+- "text" — ניסוח קצר וברור בעברית, בלשון ציווי או שם פועל, עם כל פרט חשוב (מה, עד מתי, איפה).
+- "due_date" — רק אם הוזכר תאריך או יום ("עד יום ה׳", "עד סוף החודש"); חשב יחסית לתאריך ההודעה והיעזר ביום בשבוע שבשורה. אחרת null.
+- "🎤" בתחילת הודעה = תמלול של הודעה קולית.
+- אל תחזיר משימה שכבר מופיעה ברשימת "משימות שכבר קיימות".
+
+החזר אך ורק JSON תקני, בלי שום טקסט נוסף:
+{ "tasks": [ { "message_id": "...", "audience": "all" | "me", "text": "...", "due_date": "YYYY-MM-DD" | null } ] }
+אם אין משימות, החזר { "tasks": [] }.`
+
+/** Pure: keeps well-formed tasks whose message_id is one of `allowedIds`. */
+export function normalizeManagementTasks(parsed, allowedIds) {
+  const allowed = new Set(allowedIds)
+  return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
+    .filter(t => t?.audience === 'all' || t?.audience === 'me')
+    .filter(t => typeof t.text === 'string' && normalizeText(t.text))
+    .filter(t => allowed.has(t.message_id))
+    .map(t => ({
+      message_id: t.message_id,
+      audience: t.audience,
+      text: t.text.trim(),
+      due_date: ISO_DATE.test(t.due_date || '') ? t.due_date : null,
+    }))
+}
+
+/** conversation: lines "[id] [date weekday time] sender: text"; myNames: how Avner is addressed. */
+export async function analyzeManagementTasks({ groupName, myNames, conversation, existingTasks, messageIds }) {
+  const existing = existingTasks.length ? existingTasks.map(t => `- ${t}`).join('\n') : '(אין)'
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: MANAGEMENT_TASKS_PROMPT,
+    messages: [{
+      role: 'user',
+      content: `שם הקבוצה: ${groupName}\nכינויים של אבנר: ${myNames.length ? myNames.join(', ') : 'אבנר'}\n\nמשימות שכבר קיימות — אל תחזיר אותן שוב:\n${existing}\n\nההודעות:\n${conversation}`,
+    }],
+  })
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(responseText(response)))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  return normalizeManagementTasks(parsed, messageIds)
+}

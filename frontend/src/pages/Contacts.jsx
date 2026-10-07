@@ -5,6 +5,7 @@ import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import WhatsAppSyncBanner from '../components/WhatsAppSyncBanner.jsx'
 import AdminTasksPanel from '../components/AdminTasksPanel.jsx'
+import ManagementTasksPanel from '../components/ManagementTasksPanel.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
@@ -540,6 +541,8 @@ export default function Contacts() {
         // A task ticked there may be a teacher call's task — refresh the open-tasks banner.
         onChanged={() => loadPendingTasks(contacts.filter(c => !isAdminRow(c)).map(c => c.id))}
       />
+
+      <ManagementTasksPanel />
 
       <ContactStats
         buckets={buckets}

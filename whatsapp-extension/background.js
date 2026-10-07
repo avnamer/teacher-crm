@@ -405,6 +405,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }).then(sendResponse).catch(err => sendResponse({ error: err.message }))
     return true
   }
+  if (action === 'saveManagementMessages') {
+    const { groupId, groupName, messages } = message
+    callBackend('/management-messages', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, groupName, messages }),
+    }).then(sendResponse).catch(err => sendResponse({ error: err.message }))
+    return true
+  }
   if (action === 'transcribeVoice') {
     const { audioBase64, mimeType } = message
     callBackend('/voice-transcribe', {

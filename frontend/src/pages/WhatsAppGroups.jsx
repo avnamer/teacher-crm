@@ -147,7 +147,7 @@ export default function WhatsAppGroups() {
       <form onSubmit={saveMgmt} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">
         <h2 className="font-semibold text-gray-800">משימות מההנהלה</h2>
         <p className="text-xs text-gray-500">
-          סמנו קבוצה כ"קבוצת הנהלה" למטה. מהקבוצות האלה המערכת תקרא רק הודעות של מי שרשום כאן,
+          סמנו קבוצה כ"קבוצת הנהלה" למטה. מהקבוצות האלה המערכת תקרא רק הודעות של מי שרשום כאן (וגם הודעות של כל אחד אחר שפונה אליכם בשם),
           ותציג בדשבורד את המשימות שלכל המנטורים או שמופנות אליכם. שמות מופרדים בפסיק.
         </p>
         <label className="block text-sm text-gray-700">

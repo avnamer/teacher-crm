@@ -23,21 +23,32 @@ function messageBody(m) {
   return m.text || ''
 }
 
-/** Pure: messages written by one of `givers` (exact name, case/space-insensitive) with some text. */
-export function filterGiverMessages(messages, givers) {
-  const names = new Set(givers.map(normName).filter(Boolean))
-  return messages.filter(m =>
-    m.sender !== 'me' && names.has(normName(m.groupSenderName)) && messageBody(m).trim() && m.messageId
-  )
+export function isGiver(message, givers) {
+  return new Set(givers.map(normName).filter(Boolean)).has(normName(message.groupSenderName))
+}
+
+/**
+ * Pure: messages worth analyzing — every message by a task-giver (exact name,
+ * case/space-insensitive), plus a message by anyone else that mentions one of
+ * `myNames` (a possible personal request to Avner). Everything else is noise.
+ */
+export function filterRelevantMessages(messages, givers, myNames = []) {
+  const mine = myNames.map(normName).filter(Boolean)
+  return messages.filter(m => {
+    if (m.sender === 'me' || !m.messageId) return false
+    const body = messageBody(m).trim()
+    if (!body) return false
+    return isGiver(m, givers) || mine.some(n => normName(body).includes(n))
+  })
 }
 
 /** Pure: prompt lines, oldest first. */
-export function formatManagementConversation(messages) {
+export function formatManagementConversation(messages, givers = []) {
   return [...messages]
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
     .map(m => {
       const at = new Date(m.timestamp)
-      return `[${m.messageId}] [${israelDateStr(m.timestamp)} ${israelWeekday.format(at)} ${israelTime.format(at)}] ${m.groupSenderName}: ${messageBody(m).trim()}`
+      return `[${m.messageId}] [${israelDateStr(m.timestamp)} ${israelWeekday.format(at)} ${israelTime.format(at)}] ${m.groupSenderName}${isGiver(m, givers) ? ' (הנהלה)' : ''}: ${messageBody(m).trim()}`
     })
     .join('\n')
 }
@@ -56,7 +67,7 @@ export async function extractManagementTasks({ groupId, groupName, messages }) {
   const { taskGivers, myNames } = await loadManagementSettings()
   if (taskGivers.length === 0) return { scanned: 0, saved: 0, reason: 'no task givers configured' }
 
-  const mine = filterGiverMessages(messages, taskGivers)
+  const mine = filterRelevantMessages(messages, taskGivers, myNames)
   if (mine.length === 0) return { scanned: 0, saved: 0 }
 
   // Messages already analyzed earlier (the same message re-read on a later sync).
@@ -74,7 +85,7 @@ export async function extractManagementTasks({ groupId, groupName, messages }) {
 
   const found = await analyzeManagementTasks({
     groupName, myNames,
-    conversation: formatManagementConversation(mine),
+    conversation: formatManagementConversation(mine, taskGivers),
     existingTasks: existingTexts,
     messageIds: ids,
   })
@@ -85,6 +96,8 @@ export async function extractManagementTasks({ groupId, groupName, messages }) {
     const key = normalizeText(t.text)
     if ([...existingTexts, ...accepted.map(a => a.text)].some(e => similarity(key, normalizeText(e)) >= SIMILARITY_THRESHOLD)) continue
     const m = byId.get(t.message_id)
+    // "To all mentors" only counts from management; anyone else can only ask Avner personally.
+    if (t.audience === 'all' && !isGiver(m, taskGivers)) continue
     accepted.push({
       text: t.text,
       audience: t.audience,

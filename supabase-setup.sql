@@ -409,6 +409,9 @@ CREATE TABLE IF NOT EXISTS management_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_management_tasks_done ON management_tasks(done, message_date DESC);
 
+-- שיחות פרטיות עם ההנהלה: [{"name":"בני כהן","phone":"0501234567","last_message_at":"..."}]
+ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS private_chats JSONB DEFAULT '[]';
+
 ALTER TABLE management_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE management_tasks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Owner full access" ON management_settings FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

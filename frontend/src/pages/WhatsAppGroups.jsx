@@ -21,6 +21,8 @@ export default function WhatsAppGroups() {
   const [taskGivers, setTaskGivers] = useState('')
   const [myNames, setMyNames] = useState('')
   const [mgmtSaving, setMgmtSaving] = useState(false)
+  const [privateChats, setPrivateChats] = useState([]) // as stored: [{ name, phone, last_message_at }]
+  const [privateText, setPrivateText] = useState('')   // one "name, phone" per line
 
   useEffect(() => {
     load()
@@ -52,6 +54,9 @@ export default function WhatsAppGroups() {
       const mgmt = await supabase.from('management_settings').select('*').eq('id', 'global').maybeSingle()
       setTaskGivers((mgmt.data?.task_givers || []).join(', '))
       setMyNames((mgmt.data?.my_names || []).join(', '))
+      const chats = mgmt.data?.private_chats || []
+      setPrivateChats(chats)
+      setPrivateText(chats.map(c => `${c.name}, ${c.phone}`).join('\n'))
     } catch (err) {
       console.error('Error loading whatsapp groups:', err)
     } finally {
@@ -96,9 +101,19 @@ export default function WhatsAppGroups() {
     setMgmtSaving(true)
     try {
       const split = str => str.split(',').map(s => s.trim()).filter(Boolean)
+      // "name, phone" per line; the read cursor of a chat that's still listed is kept.
+      const chats = privateText.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+        const i = line.lastIndexOf(',')
+        const name = (i === -1 ? line : line.slice(0, i)).trim()
+        const phone = (i === -1 ? '' : line.slice(i + 1)).trim()
+        if (!name || phone.replace(/\D/g, '').length < 9) throw new Error('שורה לא תקינה בשיחות פרטיות (צריך "שם, טלפון"): ' + line)
+        const old = privateChats.find(c => c.phone === phone)
+        return { name, phone, last_message_at: old?.last_message_at || null }
+      })
       const { error } = await supabase.from('management_settings')
-        .update({ task_givers: split(taskGivers), my_names: split(myNames) }).eq('id', 'global')
+        .update({ task_givers: split(taskGivers), my_names: split(myNames), private_chats: chats }).eq('id', 'global')
       if (error) throw error
+      setPrivateChats(chats)
       alert('נשמר')
     } catch (err) {
       alert('שגיאה בשמירה: ' + err.message)
@@ -160,6 +175,12 @@ export default function WhatsAppGroups() {
           איך פונים אליכם (שם / כינויים)
           <input value={myNames} onChange={e => setMyNames(e.target.value)}
             placeholder="אבנר, אבי"
+            className="mt-1 w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+        </label>
+        <label className="block text-sm text-gray-700">
+          שיחות פרטיות עם ההנהלה (שורה לכל אחד: שם, טלפון) — כל ההודעות שלהם אליכם בשיחה הפרטית ייסרקו למשימות
+          <textarea value={privateText} onChange={e => setPrivateText(e.target.value)} rows={3}
+            placeholder={'בני כהן, 0501234567\nמיקה לוי, 0521234567'}
             className="mt-1 w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
         </label>
         <button type="submit" disabled={mgmtSaving}

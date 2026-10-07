@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireExtensionToken } from '../middleware/extensionAuth.js'
 import { mergeWhatsAppMessages, findRetryCandidates } from '../services/whatsappMerge.js'
 import { extractAndSaveWhatsAppTasks } from '../services/whatsappTasks.js'
-import { extractManagementTasks } from '../services/managementTasks.js'
+import { extractManagementTasks, loadManagementSettings, extractPrivateManagementTasks } from '../services/managementTasks.js'
 import { transcribeAudio } from '../services/transcribeAudio.js'
 import { summarizeVoiceMessage } from '../services/whatsappSummarize.js'
 
@@ -49,7 +49,8 @@ router.get('/targets', async (_req, res) => {
     const groups = (groupsRes.data || []).map(g => ({
       groupId: g.group_id, name: g.name, isManagement: !!g.is_management, lastMessageAt: g.last_message_at || null,
     }))
-    res.json({ teachers, groups })
+    const { privateChats } = await loadManagementSettings()
+    res.json({ teachers, groups, privateChats })
   } catch (err) {
     console.error('[whatsapp-sync/targets]', err)
     res.status(500).json({ message: 'טעינת יעדי הסנכרון נכשלה: ' + err.message })
@@ -166,6 +167,24 @@ router.post('/management-messages', async (req, res) => {
   } catch (err) {
     console.error('[whatsapp-sync/management-messages]', err)
     res.status(500).json({ message: 'עיבוד הודעות ההנהלה נכשל: ' + err.message })
+  }
+})
+
+// POST /api/whatsapp-sync/management-private
+// { phone, name, messages: [...] }
+//
+// A private chat with a task-giver (management_settings.private_chats): every message of
+// theirs in the chat is a candidate. The cursor lives on that private_chats entry.
+router.post('/management-private', async (req, res) => {
+  const { phone, name, messages } = req.body
+  if (!phone || !name || !Array.isArray(messages)) return res.status(400).json({ message: 'phone / name / messages חסרים' })
+  try {
+    const result = await extractPrivateManagementTasks({ phone, name, messages })
+    console.log('[whatsapp-sync/management-private]', name, result)
+    res.json(result)
+  } catch (err) {
+    console.error('[whatsapp-sync/management-private]', err)
+    res.status(500).json({ message: 'עיבוד שיחה פרטית עם ההנהלה נכשל: ' + err.message })
   }
 })
 

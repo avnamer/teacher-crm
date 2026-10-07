@@ -56,15 +56,17 @@ export function formatManagementConversation(messages, givers = []) {
 export async function loadManagementSettings() {
   const { data, error } = await supabase.from('management_settings').select('*').eq('id', 'global').maybeSingle()
   if (error) throw error
-  return { taskGivers: data?.task_givers || [], myNames: data?.my_names || [] }
+  return { taskGivers: data?.task_givers || [], myNames: data?.my_names || [], privateChats: data?.private_chats || [] }
 }
 
 /**
  * Extracts and saves tasks from a batch of a management group's messages.
  * Returns { scanned, saved }. Throws on failure — the sync itself is unaffected.
  */
-export async function extractManagementTasks({ groupId, groupName, messages }) {
-  const { taskGivers, myNames } = await loadManagementSettings()
+export async function extractManagementTasks({ groupId, groupName, messages, extraGivers = [] }) {
+  const settings = await loadManagementSettings()
+  const { myNames } = settings
+  const taskGivers = [...settings.taskGivers, ...extraGivers]
   if (taskGivers.length === 0) return { scanned: 0, saved: 0, reason: 'no task givers configured' }
 
   const mine = filterRelevantMessages(messages, taskGivers, myNames)
@@ -117,4 +119,26 @@ export async function extractManagementTasks({ groupId, groupName, messages }) {
     if (error) throw error
   }
   return { scanned: mine.length, saved: fresh.length }
+}
+
+/**
+ * A private chat with a task-giver. The chat's name stands in for the sender on every
+ * message that isn't mine, and counts as a giver for this batch (it was listed in the
+ * settings on purpose). The cursor is stored on the matching private_chats entry, and
+ * only advances once Claude succeeded.
+ */
+export async function extractPrivateManagementTasks({ phone, name, messages }) {
+  const asGiverMessages = messages.map(m => (m.sender === 'me' ? m : { ...m, groupSenderName: name }))
+  const result = await extractManagementTasks({
+    groupId: `dm:${phone}`, groupName: `${name} (שיחה פרטית)`, messages: asGiverMessages, extraGivers: [name],
+  })
+  const last = messages.length > 0 ? messages[messages.length - 1].timestamp : null
+  if (last) {
+    const { data, error } = await supabase.from('management_settings').select('private_chats').eq('id', 'global').maybeSingle()
+    if (error) throw error
+    const chats = (data?.private_chats || []).map(c => (c.phone === phone ? { ...c, last_message_at: last } : c))
+    const { error: upErr } = await supabase.from('management_settings').update({ private_chats: chats }).eq('id', 'global')
+    if (upErr) throw upErr
+  }
+  return result
 }

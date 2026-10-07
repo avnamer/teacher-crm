@@ -746,6 +746,19 @@ async function readCurrentDM(contactId, teacherName, lastMessageAt) {
   }
 }
 
+// A private chat with a management task-giver: the tab was already navigated to it by
+// the phone deep link; every message is sent to the backend, which extracts the tasks.
+async function readManagementDM(phone, name, lastMessageAt) {
+  if (!queryFirst(WA_SELECTORS.appLoaded, document)) {
+    throw new Error('WhatsApp Web לא פתוח או לא מחובר במחשב')
+  }
+  const messages = await collectMessages(null, lastMessageAt)
+  if (messages.length > 0) {
+    const res = await toBackground('saveManagementPrivate', { phone, name, messages })
+    if (res?.error) throw new Error(res.error)
+  }
+}
+
 // A management group ("קבוצת הנהלה"): every message goes to the backend with its sender
 // name; the backend keeps only the task-givers' and extracts tasks. No teacher matching.
 async function syncManagementGroup(group) {
@@ -837,6 +850,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message.action === 'readDM') {
     readCurrentDM(message.contactId, message.teacherName, message.lastMessageAt)
+      .then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message }))
+    return true // async response
+  }
+  if (message.action === 'readManagementDM') {
+    readManagementDM(message.phone, message.name, message.lastMessageAt)
       .then(() => sendResponse({ ok: true }))
       .catch(err => sendResponse({ ok: false, error: err.message }))
     return true // async response

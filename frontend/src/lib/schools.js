@@ -333,8 +333,7 @@ const NOTE_SHORT_WORDS = 30
 const NOTE_MAX_SHORT_SENTENCES = 2
 // Bump the prefix when the note prompt changes, so old cached notes are regenerated.
 const noteFingerprint = text => fingerprint(`v2:${text}`)
-const sentenceCount = text => text.split(/[.!?؟]+(?:\s|$)|
-+/).filter(p => p.trim()).length
+const sentenceCount = text => text.split(/[.!?]+(?:\s|$)|\n+/).filter(p => p.trim()).length
 
 export const NOTE_SOURCE = {
   whatsapp: { label: 'וואטסאפ', icon: '💬' },

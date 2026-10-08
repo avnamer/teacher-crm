@@ -5,15 +5,6 @@ import { supabase } from '../lib/supabase.js'
 // by the sync (backend/src/services/managementTasks.js) and stored in management_tasks.
 // audience 'all' = to all mentors (Avner included), 'me' = to Avner by name.
 
-const EXPANDED_KEY = 'managementTasksPanelExpanded'
-
-function readExpanded() {
-  try { return localStorage.getItem(EXPANDED_KEY) !== '0' } catch { return true }
-}
-function writeExpanded(v) {
-  try { localStorage.setItem(EXPANDED_KEY, v ? '1' : '0') } catch { /* storage unavailable */ }
-}
-
 function todayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -37,7 +28,7 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [expanded, setExpanded] = useState(readExpanded)
+  const [expanded, setExpanded] = useState(false) // always starts collapsed
   const [showDone, setShowDone] = useState(false)
   const [openId, setOpenId] = useState(null) // task whose original message is shown
   const [busyId, setBusyId] = useState(null)
@@ -135,7 +126,7 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-      <button onClick={() => setExpanded(v => { writeExpanded(!v); return !v })}
+      <button onClick={() => setExpanded(v => !v)}
         className="w-full flex items-center justify-between px-4 py-3 text-right">
         <span className="font-semibold text-gray-800">
           משימות מההנהלה {open.length > 0 && <span className="text-sm font-normal text-gray-500">({open.length} פתוחות)</span>}

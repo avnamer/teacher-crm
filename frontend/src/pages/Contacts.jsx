@@ -536,6 +536,8 @@ export default function Contacts() {
         onDeleted={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
       />
 
+      <ManagementTasksPanel reloadKey={managementTasksReloadKey} />
+
       <AdminTasksPanel
         adminContactId={contacts.find(isAdminRow)?.id || null}
         reloadKey={adminTasksReloadKey}
@@ -544,8 +546,6 @@ export default function Contacts() {
         // A task ticked there may be a teacher call's task — refresh the open-tasks banner.
         onChanged={() => loadPendingTasks(contacts.filter(c => !isAdminRow(c)).map(c => c.id))}
       />
-
-      <ManagementTasksPanel reloadKey={managementTasksReloadKey} />
 
       <ContactStats
         buckets={buckets}

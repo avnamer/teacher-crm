@@ -16,24 +16,6 @@ import {
 // and meetings (shown with the teacher's name; they stay on the teacher's page too).
 // See lib/adminTasks.js for where they're stored.
 
-const EXPANDED_KEY = 'adminTasksPanelExpanded'
-
-function readExpanded() {
-  try {
-    return localStorage.getItem(EXPANDED_KEY) !== '0'
-  } catch {
-    return true
-  }
-}
-
-function writeExpanded(value) {
-  try {
-    localStorage.setItem(EXPANDED_KEY, value ? '1' : '0')
-  } catch {
-    // storage unavailable (private mode etc.) — the panel just won't remember
-  }
-}
-
 function todayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -77,7 +59,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [expanded, setExpanded] = useState(readExpanded)
+  const [expanded, setExpanded] = useState(false) // always starts collapsed
   const [showDone, setShowDone] = useState(false)
   const [busyKey, setBusyKey] = useState(null)
   const [editingKey, setEditingKey] = useState(null)
@@ -98,10 +80,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
   useEffect(() => { load() }, [load, reloadKey])
 
   function toggleExpanded() {
-    setExpanded(v => {
-      writeExpanded(!v)
-      return !v
-    })
+    setExpanded(v => !v)
   }
 
   async function run(key, action) {

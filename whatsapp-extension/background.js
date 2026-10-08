@@ -281,8 +281,8 @@ async function runSync() {
       return { ok: false, error: reason }
     }
 
-    const { teachers, groups } = await callBackend('/targets', { method: 'GET' })
-    const total = teachers.length + groups.length
+    const { teachers, groups, privateChats = [] } = await callBackend('/targets', { method: 'GET' })
+    const total = teachers.length + groups.length + privateChats.length
     let done = 0
     await callBackend('/sync/begin', { method: 'POST', body: JSON.stringify({ total }) })
 
@@ -304,6 +304,33 @@ async function runSync() {
         await callBackend('/failed', {
           method: 'POST',
           body: JSON.stringify({ teacherName: teacher.name, reason: err.message }),
+        }).catch(() => {})
+      }
+      done++
+      await callBackend('/sync/progress', { method: 'POST', body: JSON.stringify({ done, total }) }).catch(() => {})
+      await humanDelay()
+    }
+
+    // Private chats with the management task-givers ("שיחות פרטיות להנהלה"): same phone
+    // deep link as teacher DMs, but the messages go to management-task extraction.
+    for (const chat of privateChats) {
+      try {
+        const phone = normalizePhoneForSearch(chat.phone)
+        if (!phone) throw new Error('אין מספר טלפון תקין')
+        await navigateToPhone(tab.id, phone)
+        const result = await sendToContentScript(tab.id, {
+          action: 'readManagementDM',
+          phone: chat.phone,
+          name: chat.name,
+          lastMessageAt: chat.last_message_at || null,
+        })
+        if (!result?.ok) throw new Error(result?.error || 'קריאת ההודעות נכשלה')
+      } catch (err) {
+        console.error('[whatsapp-sync/background] management DM failed for', chat.name, err)
+        failedCountThisRun++
+        await callBackend('/failed', {
+          method: 'POST',
+          body: JSON.stringify({ teacherName: `שיחה פרטית: ${chat.name}`, reason: err.message }),
         }).catch(() => {})
       }
       done++
@@ -402,6 +429,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     callBackend('/messages', {
       method: 'POST',
       body: JSON.stringify({ contactId, source, groupId, groupName, messages }),
+    }).then(sendResponse).catch(err => sendResponse({ error: err.message }))
+    return true
+  }
+  if (action === 'saveManagementMessages') {
+    const { groupId, groupName, messages } = message
+    callBackend('/management-messages', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, groupName, messages }),
+    }).then(sendResponse).catch(err => sendResponse({ error: err.message }))
+    return true
+  }
+  if (action === 'saveManagementPrivate') {
+    const { phone, name, messages } = message
+    callBackend('/management-private', {
+      method: 'POST',
+      body: JSON.stringify({ phone, name, messages }),
     }).then(sendResponse).catch(err => sendResponse({ error: err.message }))
     return true
   }

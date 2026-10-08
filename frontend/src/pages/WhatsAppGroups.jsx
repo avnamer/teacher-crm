@@ -18,6 +18,11 @@ export default function WhatsAppGroups() {
   const [savingId, setSavingId] = useState(null)
   const [newGroupName, setNewGroupName] = useState('')
   const [adding, setAdding] = useState(false)
+  const [taskGivers, setTaskGivers] = useState('')
+  const [myNames, setMyNames] = useState('')
+  const [mgmtSaving, setMgmtSaving] = useState(false)
+  const [privateChats, setPrivateChats] = useState([]) // as stored: [{ name, phone, last_message_at }]
+  const [privateText, setPrivateText] = useState('')   // one "name, phone" per line
 
   useEffect(() => {
     load()
@@ -45,6 +50,13 @@ export default function WhatsAppGroups() {
         byGroup[gid].add(name)
       }
       setMatchedByGroup(byGroup)
+
+      const mgmt = await supabase.from('management_settings').select('*').eq('id', 'global').maybeSingle()
+      setTaskGivers((mgmt.data?.task_givers || []).join(', '))
+      setMyNames((mgmt.data?.my_names || []).join(', '))
+      const chats = mgmt.data?.private_chats || []
+      setPrivateChats(chats)
+      setPrivateText(chats.map(c => `${c.name}, ${c.phone}`).join('\n'))
     } catch (err) {
       console.error('Error loading whatsapp groups:', err)
     } finally {
@@ -65,6 +77,48 @@ export default function WhatsAppGroups() {
       alert('שגיאה בעדכון הקבוצה: ' + err.message)
     } finally {
       setSavingId(null)
+    }
+  }
+
+  async function toggleManagement(group) {
+    setSavingId(group.id)
+    try {
+      const { error } = await supabase
+        .from('whatsapp_groups')
+        .update({ is_management: !group.is_management })
+        .eq('id', group.id)
+      if (error) throw error
+      setGroups(prev => prev.map(g => (g.id === group.id ? { ...g, is_management: !g.is_management } : g)))
+    } catch (err) {
+      alert('שגיאה בעדכון הקבוצה: ' + err.message)
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  async function saveMgmt(e) {
+    e.preventDefault()
+    setMgmtSaving(true)
+    try {
+      const split = str => str.split(',').map(s => s.trim()).filter(Boolean)
+      // "name, phone" per line; the read cursor of a chat that's still listed is kept.
+      const chats = privateText.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+        const i = line.lastIndexOf(',')
+        const name = (i === -1 ? line : line.slice(0, i)).trim()
+        const phone = (i === -1 ? '' : line.slice(i + 1)).trim()
+        if (!name || phone.replace(/\D/g, '').length < 9) throw new Error('שורה לא תקינה בשיחות פרטיות (צריך "שם, טלפון"): ' + line)
+        const old = privateChats.find(c => c.phone === phone)
+        return { name, phone, last_message_at: old?.last_message_at || null }
+      })
+      const { error } = await supabase.from('management_settings')
+        .update({ task_givers: split(taskGivers), my_names: split(myNames), private_chats: chats }).eq('id', 'global')
+      if (error) throw error
+      setPrivateChats(chats)
+      alert('נשמר')
+    } catch (err) {
+      alert('שגיאה בשמירה: ' + err.message)
+    } finally {
+      setMgmtSaving(false)
     }
   }
 
@@ -105,6 +159,36 @@ export default function WhatsAppGroups() {
         שסימנתם ל"סנכרן וואטסאפ" ושכתבו בקבוצה, לפי שם/כינוי (ראו כרטיס מורה).
       </p>
 
+      <form onSubmit={saveMgmt} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">
+        <h2 className="font-semibold text-gray-800">משימות מההנהלה</h2>
+        <p className="text-xs text-gray-500">
+          סמנו קבוצה כ"קבוצת הנהלה" למטה. מהקבוצות האלה המערכת תקרא רק הודעות של מי שרשום כאן (וגם הודעות של כל אחד אחר שפונה אליכם בשם),
+          ותציג בדשבורד את המשימות שלכל המנטורים או שמופנות אליכם. שמות מופרדים בפסיק.
+        </p>
+        <label className="block text-sm text-gray-700">
+          מי נותן משימות (השם המדויק כפי שמופיע בוואטסאפ בקבוצה)
+          <input value={taskGivers} onChange={e => setTaskGivers(e.target.value)}
+            placeholder="בני ..., מיקה ..."
+            className="mt-1 w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+        </label>
+        <label className="block text-sm text-gray-700">
+          איך פונים אליכם (שם / כינויים)
+          <input value={myNames} onChange={e => setMyNames(e.target.value)}
+            placeholder="אבנר, אבי"
+            className="mt-1 w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+        </label>
+        <label className="block text-sm text-gray-700">
+          שיחות פרטיות עם ההנהלה (שורה לכל אחד: שם, טלפון) — כל ההודעות שלהם אליכם בשיחה הפרטית ייסרקו למשימות
+          <textarea value={privateText} onChange={e => setPrivateText(e.target.value)} rows={3}
+            placeholder={'בני כהן, 0501234567\nמיקה לוי, 0521234567'}
+            className="mt-1 w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+        </label>
+        <button type="submit" disabled={mgmtSaving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+          {mgmtSaving ? 'שומר...' : 'שמור'}
+        </button>
+      </form>
+
       <form onSubmit={addGroupManually} className="flex gap-2">
         <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
           placeholder='שם הקבוצה המדויק, למשל "כיתה ג׳2"'
@@ -133,12 +217,19 @@ export default function WhatsAppGroups() {
                       : 'עדיין לא זוהו הודעות ממורים בקבוצה זו'}
                   </p>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 shrink-0">
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                <label className="flex items-center gap-2 text-sm text-gray-600" title="קבוצת הנהלה: נקראות רק הודעות של נותני המשימות, ונשמרות רק משימות">
+                  <input type="checkbox" checked={!!g.is_management} disabled={savingId === g.id}
+                    onChange={() => toggleManagement(g)} className="w-4 h-4" />
+                  קבוצת הנהלה
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
                   <input type="checkbox" checked={g.sync_enabled} disabled={savingId === g.id}
                     onChange={() => toggleGroup(g)}
                     className="w-4 h-4" />
                   סנכרן
                 </label>
+                </div>
               </div>
             )
           })}

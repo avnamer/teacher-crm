@@ -364,15 +364,80 @@ const HISTORY_SUMMARY_PROMPT = `אתה מסכם תיעוד של שיחה, פגי
 // conversation carry what a 3-line summary needs.
 const HISTORY_SUMMARY_MAX_CHARS = 40000
 
-export async function summarizeForHistory(text) {
+// A sticky note on the Schools page: one or two sentences about a single chat/call.
+const NOTE_SUMMARY_PROMPT = `אתה מסכם שיחה או התכתבות בין אבנר (מנטור של מורים) לבין מורה, כדי שיוכל להיזכר בה לפני פגישה בבית הספר.
+כתוב לכל היותר שני משפטים קצרים בעברית — על מה דיברו, מה עלה, מה סוכם או התבקש. שלושה משפטים מותרים רק אם אי אפשר להעביר את העיקר בפחות; לעולם לא יותר משלושה. כתוב ישר לעניין, בגוף שלישי, בלי "המורה ואבנר דיברו על".
+החזר אך ורק את הסיכום — בלי מבוא, בלי כותרת, בלי גרשיים, בלי טקסט נוסף.`
+
+export async function summarizeForHistory(text, { brief = false } = {}) {
   const input = text.length > HISTORY_SUMMARY_MAX_CHARS
     ? `${text.slice(0, HISTORY_SUMMARY_MAX_CHARS / 2)}\n…\n${text.slice(-HISTORY_SUMMARY_MAX_CHARS / 2)}`
     : text
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: MAX_TOKENS,
-    system: HISTORY_SUMMARY_PROMPT,
+    system: brief ? NOTE_SUMMARY_PROMPT : HISTORY_SUMMARY_PROMPT,
     messages: [{ role: 'user', content: input }],
   })
   return responseText(response).trim()
+}
+
+// ─── Tasks from management WhatsApp groups ──────────────────────────────────
+// The messages passed here were already filtered to the task-givers (Benny / Mika), so
+// every line is theirs. The only question left is whether a line is a task that reaches
+// Avner: addressed to all mentors, or to Avner by name.
+const MANAGEMENT_TASKS_PROMPT = `אתה עוזר שמנתח הודעות מקבוצת וואטסאפ של הנהלת תוכנית מנטורים. ההודעות הן של חברי הנהלה (בני / מיקה, מסומנים "(הנהלה)") וגם הודעות של אחרים שמזכירות את אבנר. המשתמש, אבנר, הוא מנטור בתוכנית.
+
+חלץ רק משימות שמגיעות אל אבנר:
+- "audience": "all" — משימה או בקשה שמופנית לכל המנטורים (למשל "מנטורים יקרים, נא למלא את הטופס עד יום ה׳", "כל המנטורים - לשלוח דוח"). אבנר כלול בהם.
+- "audience": "me" — משימה שמופנית לאבנר בשמו, בכינוי מהרשימה שיצוינה, או בתגובה (reply) אליו (למשל "אבנר, תעשה את זה"). פנייה אישית כזו נחשבת משימה מכל שולח, גם אם אינו מההנהלה.
+- שולח שאינו מההנהלה: החזר ממנו רק משימה שמופנית לאבנר אישית ("me"), אף פעם לא "all". אם שולח כזה רק מזכיר את אבנר בלי לבקש ממנו לעשות משהו, אין משימה.
+
+אל תחזיר: משימות שמופנות למנטור אחר בשמו, הודעות מידע/עדכון שאין בהן מה לעשות, ברכות, שיחת חולין, ומשימות של ההנהלה עצמה. משימה היא בקשה קונקרטית לעשות משהו (למלא, לשלוח, להגיע, לעדכן, לבדוק).
+
+- "message_id" — המזהה שמופיע בתחילת השורה ממנה עלתה המשימה.
+- "text" — ניסוח קצר וברור בעברית, בלשון ציווי או שם פועל, עם כל פרט חשוב (מה, עד מתי, איפה).
+- "due_date" — רק אם הוזכר תאריך או יום ("עד יום ה׳", "עד סוף החודש"); חשב יחסית לתאריך ההודעה והיעזר ביום בשבוע שבשורה. אחרת null.
+- "🎤" בתחילת הודעה = תמלול של הודעה קולית.
+- אל תחזיר משימה שכבר מופיעה ברשימת "משימות שכבר קיימות".
+
+החזר אך ורק JSON תקני, בלי שום טקסט נוסף:
+{ "tasks": [ { "message_id": "...", "audience": "all" | "me", "text": "...", "due_date": "YYYY-MM-DD" | null } ] }
+אם אין משימות, החזר { "tasks": [] }.`
+
+/** Pure: keeps well-formed tasks whose message_id is one of `allowedIds`. */
+export function normalizeManagementTasks(parsed, allowedIds) {
+  const allowed = new Set(allowedIds)
+  return (Array.isArray(parsed?.tasks) ? parsed.tasks : [])
+    .filter(t => t?.audience === 'all' || t?.audience === 'me')
+    .filter(t => typeof t.text === 'string' && normalizeText(t.text))
+    .filter(t => allowed.has(t.message_id))
+    .map(t => ({
+      message_id: t.message_id,
+      audience: t.audience,
+      text: t.text.trim(),
+      due_date: ISO_DATE.test(t.due_date || '') ? t.due_date : null,
+    }))
+}
+
+/** conversation: lines "[id] [date weekday time] sender: text"; myNames: how Avner is addressed. */
+export async function analyzeManagementTasks({ groupName, myNames, conversation, existingTasks, messageIds }) {
+  const existing = existingTasks.length ? existingTasks.map(t => `- ${t}`).join('\n') : '(אין)'
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-5',
+    max_tokens: MAX_TOKENS,
+    system: MANAGEMENT_TASKS_PROMPT,
+    messages: [{
+      role: 'user',
+      content: `שם הקבוצה: ${groupName}\nכינויים של אבנר: ${myNames.length ? myNames.join(', ') : 'אבנר'}\n\nמשימות שכבר קיימות — אל תחזיר אותן שוב:\n${existing}\n\nההודעות:\n${conversation}`,
+    }],
+  })
+
+  let parsed
+  try {
+    parsed = JSON.parse(extractJson(responseText(response)))
+  } catch {
+    throw new Error('התשובה מ-Claude לא הייתה JSON תקני')
+  }
+  return normalizeManagementTasks(parsed, messageIds)
 }

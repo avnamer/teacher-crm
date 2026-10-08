@@ -531,6 +531,7 @@ export default function Contacts() {
           // contacts so the panel gets its id, and reload the panel for the new task.
           if (!contacts.some(isAdminRow)) loadContacts()
           setAdminTasksReloadKey(k => k + 1)
+          setManagementTasksReloadKey(k => k + 1)
         }}
         onDeleted={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
       />

@@ -11,6 +11,7 @@ import {
   mergeOrCreateMeeting,
 } from '../lib/voiceLogActions.js'
 import { deletePendingVoiceLog } from '../lib/pendingVoiceLog.js'
+import { addManagementTask } from '../lib/managementTasks.js'
 import { ASSIGNEE_LABEL } from '../lib/interactions.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
 
@@ -27,6 +28,7 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
   const [communicationType, setCommunicationType] = useState(item.communication_type)
   const [summary, setSummary] = useState(item.summary || '')
   const [columnLabel, setColumnLabel] = useState(item.column_label || '')
+  const [alsoManagement, setAlsoManagement] = useState(false) // admin_task only: also a "משימה מההנהלה"
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -127,6 +129,14 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
         })
         const calendarWarning = await createCalendarEventsForActionItems(item.action_items, targetName, summary)
         if (calendarWarning) alert(calendarWarning)
+        if (route === 'admin_task' && alsoManagement) {
+          // One management task per follow-up item; with none, the summary itself is the task.
+          const items = (item.action_items || []).filter(a => a.text)
+          const tasks = items.length > 0 ? items : [{ text: summary, due_date: null }]
+          for (const t of tasks) {
+            await addManagementTask({ text: t.text, due_date: t.due_date, sender_name: 'הקלטה קולית' })
+          }
+        }
       }
     } catch (err) {
       setError('אישור נכשל: ' + (err instanceof TypeError ? 'שגיאת רשת — יש לבדוק את החיבור ולנסות שוב' : err.message))
@@ -330,6 +340,14 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
             </div>
           )}
         </>
+      )}
+
+      {route === 'admin_task' && (
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={alsoManagement} disabled={saving}
+            onChange={(e) => setAlsoManagement(e.target.checked)} className="w-4 h-4" />
+          🏢 גם משימה מההנהלה (תופיע בלוח "משימות מההנהלה" בדשבורד)
+        </label>
       )}
 
       {route === 'new_task_column' && (

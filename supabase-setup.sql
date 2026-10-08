@@ -373,3 +373,46 @@ ALTER TABLE whatsapp_sync_requests ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Owner full access" ON whatsapp_groups        FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON whatsapp_sync_state    FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON whatsapp_sync_requests FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: משימות מההנהלה (2026-10-07, הרץ פעם אחת ב-Supabase SQL Editor)
+--
+-- קבוצות וואטסאפ מסומנות "קבוצת הנהלה" (whatsapp_groups.is_management): הסנכרון קורא
+-- בהן הודעות רק משמות ה"נותנים משימות" (בני, מיקה), ו-Claude מחלץ מהן משימות שמיועדות
+-- לכל המנטורים או לאבנר בשמו. התוצאה נשמרת ב-management_tasks ומוצגת בדשבורד.
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE whatsapp_groups ADD COLUMN IF NOT EXISTS is_management BOOLEAN DEFAULT false;
+ALTER TABLE whatsapp_groups ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ; -- סמן קריאה לקבוצות הנהלה
+
+-- שורה יחידה: מי נותן משימות, ובאילו שמות פונים אל אבנר.
+CREATE TABLE IF NOT EXISTS management_settings (
+  id TEXT DEFAULT 'global' PRIMARY KEY,
+  task_givers TEXT[] DEFAULT '{}', -- שמות כפי שמופיעים בוואטסאפ, למשל {"בני כהן","מיקה לוי"}
+  my_names TEXT[] DEFAULT '{}'     -- איך פונים אל אבנר ("אבנר", "אבי")
+);
+INSERT INTO management_settings (id) VALUES ('global') ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS management_tasks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  text TEXT NOT NULL,
+  audience TEXT NOT NULL CHECK (audience IN ('all', 'me')), -- all = לכל המנטורים, me = מופנית לאבנר בשמו
+  sender_name TEXT NOT NULL,
+  group_id TEXT,
+  group_name TEXT,
+  message_id TEXT,
+  message_text TEXT,      -- ההודעה המקורית
+  message_date DATE,      -- תאריך ההודעה (שעון ישראל)
+  due_date DATE,
+  done BOOLEAN DEFAULT false,
+  done_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_management_tasks_done ON management_tasks(done, message_date DESC);
+
+-- שיחות פרטיות עם ההנהלה: [{"name":"בני כהן","phone":"0501234567","last_message_at":"..."}]
+ALTER TABLE management_settings ADD COLUMN IF NOT EXISTS private_chats JSONB DEFAULT '[]';
+
+ALTER TABLE management_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE management_tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner full access" ON management_settings FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+CREATE POLICY "Owner full access" ON management_tasks    FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

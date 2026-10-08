@@ -5,6 +5,7 @@ import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import WhatsAppSyncBanner from '../components/WhatsAppSyncBanner.jsx'
 import AdminTasksPanel from '../components/AdminTasksPanel.jsx'
+import ManagementTasksPanel from '../components/ManagementTasksPanel.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
@@ -137,6 +138,7 @@ export default function Contacts() {
   const [duplicateMeetingsExpanded, setDuplicateMeetingsExpanded] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set()) // free-form checkbox selection, for the "send to selected" action
   const [showSelectedSend, setShowSelectedSend] = useState(false)
+  const [managementTasksReloadKey, setManagementTasksReloadKey] = useState(0) // bumped when a task is also tagged "מההנהלה"
   const [adminTasksReloadKey, setAdminTasksReloadKey] = useState(0) // bumped when a voice log is approved, so a new admin task shows up
 
   useEffect(() => {
@@ -529,6 +531,7 @@ export default function Contacts() {
           // contacts so the panel gets its id, and reload the panel for the new task.
           if (!contacts.some(isAdminRow)) loadContacts()
           setAdminTasksReloadKey(k => k + 1)
+          setManagementTasksReloadKey(k => k + 1)
         }}
         onDeleted={id => setPendingVoiceLogs(prev => prev.filter(p => p.id !== id))}
       />
@@ -537,9 +540,12 @@ export default function Contacts() {
         adminContactId={contacts.find(isAdminRow)?.id || null}
         reloadKey={adminTasksReloadKey}
         onAdminContactCreated={loadContacts}
+        onManagementTaskAdded={() => setManagementTasksReloadKey(k => k + 1)}
         // A task ticked there may be a teacher call's task — refresh the open-tasks banner.
         onChanged={() => loadPendingTasks(contacts.filter(c => !isAdminRow(c)).map(c => c.id))}
       />
+
+      <ManagementTasksPanel reloadKey={managementTasksReloadKey} />
 
       <ContactStats
         buckets={buckets}

@@ -1319,8 +1319,9 @@ function EditableCell({ contact, col, journalMap, lastNonJournalMap, isEditing, 
     return (
       <button
         onClick={onStartEdit}
-        className="w-full text-right hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors truncate block"
-        title={editType === 'journal' ? (journalMap?.[contact.id]?.[col.key]?.content || 'לחץ להוספת רשומה חדשה') : 'לחץ לעריכה'}
+        className={`w-full text-right hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors block ${col.key === 'school' ? 'break-words' : 'truncate'}`}
+        style={col.key === 'school' ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
+        title={editType === 'journal' ? (journalMap?.[contact.id]?.[col.key]?.content || 'לחץ להוספת רשומה חדשה') : (col.key === 'school' && display ? display : 'לחץ לעריכה')}
       >
         {display}
       </button>

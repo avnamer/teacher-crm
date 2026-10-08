@@ -372,7 +372,7 @@ function TaskForm({ initialText, initialDue, initialRecurring, allowRecurring = 
             title="המשימה תופיע גם בלוח 'משימות מההנהלה' בדשבורד">
             <input type="checkbox" checked={management}
               onChange={e => setManagement(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
-            🏢 גם משימה מההנהלה
+            🏢 משימה מהנהלת טק סקול
           </label>
         )}
         <div className="flex gap-2 mr-auto">

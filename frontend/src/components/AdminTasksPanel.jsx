@@ -9,6 +9,7 @@ import {
   addAdminTask,
   unassignAdminTask,
 } from '../lib/adminTasks.js'
+import { addManagementTask } from '../lib/managementTasks.js'
 
 // "המשימות שלי" — the system admin's personal tasks, at the top of the dashboard.
 // Tasks come from approved "משימה אישית לי" voice logs, dictated "משימה לעצמי" voice
@@ -73,7 +74,7 @@ function deleteConfirmText(task) {
     : `למחוק את המשימה "${task.text}"?`
 }
 
-export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminContactCreated, onChanged }) {
+export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminContactCreated, onChanged, onManagementTaskAdded }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -153,12 +154,15 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
               initialDue=""
               initialRecurring={false}
               submitLabel="הוסף"
+              allowManagement
               busy={busyKey === 'new'}
               onCancel={() => setAdding(false)}
-              onSubmit={values => run('new', async () => {
+              onSubmit={({ management, ...values }) => run('new', async () => {
                 const contactId = await addAdminTask(values)
+                if (management) await addManagementTask(values)
                 if (!adminContactId) onAdminContactCreated?.(contactId)
                 setAdding(false)
+                if (management) onManagementTaskAdded?.()
               })}
             />
           ) : (
@@ -319,8 +323,9 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
   )
 }
 
-function TaskForm({ initialText, initialDue, initialRecurring, allowRecurring = true, submitLabel, busy, onCancel, onSubmit }) {
+function TaskForm({ initialText, initialDue, initialRecurring, allowRecurring = true, allowManagement = false, submitLabel, busy, onCancel, onSubmit }) {
   const [text, setText] = useState(initialText)
+  const [management, setManagement] = useState(false)
   const [due, setDue] = useState(initialDue)
   const [recurring, setRecurring] = useState(initialRecurring)
 
@@ -328,7 +333,7 @@ function TaskForm({ initialText, initialDue, initialRecurring, allowRecurring = 
     e.preventDefault()
     if (!text.trim()) return alert('יש להזין את תוכן המשימה')
     if (recurring && !due) return alert('משימה חוזרת צריכה תאריך יעד — ממנו נקבע היום בחודש')
-    onSubmit({ text, due_date: due || null, recurrence: recurring ? { type: 'monthly' } : null })
+    onSubmit({ text, due_date: due || null, recurrence: recurring ? { type: 'monthly' } : null, management })
   }
 
   return (
@@ -361,6 +366,14 @@ function TaskForm({ initialText, initialDue, initialRecurring, allowRecurring = 
             onChange={e => setRecurring(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
           🔁 חוזר כל חודש{due ? ` ב-${Number(due.slice(8, 10))} לחודש` : ''}
         </label>
+        )}
+        {allowManagement && (
+          <label className="text-xs flex items-center gap-1.5 text-gray-700"
+            title="המשימה תופיע גם בלוח 'משימות מההנהלה' בדשבורד">
+            <input type="checkbox" checked={management}
+              onChange={e => setManagement(e.target.checked)} className="w-4 h-4 accent-indigo-600" />
+            🏢 גם משימה מההנהלה
+          </label>
         )}
         <div className="flex gap-2 mr-auto">
           <button type="button" onClick={onCancel} disabled={busy}

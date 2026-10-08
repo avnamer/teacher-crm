@@ -138,6 +138,7 @@ export default function Contacts() {
   const [duplicateMeetingsExpanded, setDuplicateMeetingsExpanded] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set()) // free-form checkbox selection, for the "send to selected" action
   const [showSelectedSend, setShowSelectedSend] = useState(false)
+  const [managementTasksReloadKey, setManagementTasksReloadKey] = useState(0) // bumped when a task is also tagged "מההנהלה"
   const [adminTasksReloadKey, setAdminTasksReloadKey] = useState(0) // bumped when a voice log is approved, so a new admin task shows up
 
   useEffect(() => {
@@ -538,11 +539,12 @@ export default function Contacts() {
         adminContactId={contacts.find(isAdminRow)?.id || null}
         reloadKey={adminTasksReloadKey}
         onAdminContactCreated={loadContacts}
+        onManagementTaskAdded={() => setManagementTasksReloadKey(k => k + 1)}
         // A task ticked there may be a teacher call's task — refresh the open-tasks banner.
         onChanged={() => loadPendingTasks(contacts.filter(c => !isAdminRow(c)).map(c => c.id))}
       />
 
-      <ManagementTasksPanel />
+      <ManagementTasksPanel reloadKey={managementTasksReloadKey} />
 
       <ContactStats
         buckets={buckets}

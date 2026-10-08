@@ -33,7 +33,7 @@ function compareOpen(a, b) {
   return (b.message_date || '').localeCompare(a.message_date || '')
 }
 
-export default function ManagementTasksPanel() {
+export default function ManagementTasksPanel({ reloadKey = 0 }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -56,7 +56,7 @@ export default function ManagementTasksPanel() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load, reloadKey])
 
   async function setDone(task, done) {
     setBusyId(task.id)

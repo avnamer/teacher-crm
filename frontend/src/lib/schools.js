@@ -313,6 +313,9 @@ export function buildHistory(rows, { school, contactsById, contactsByName }) {
 
   return [...items.values()]
     .filter(item => {
+      // A school chosen by hand on the meeting's edit form settles it.
+      const chosen = item.rows.find(r => r.metadata?.school)?.metadata.school
+      if (chosen) return chosen === school
       const involved = item.teacherIds.map(id => contactsById[id]).filter(Boolean)
       if (involved.some(c => !teachesOtherSchool(c))) return true
       const evidence = evidenceSchools(item, involved, contactsByName)

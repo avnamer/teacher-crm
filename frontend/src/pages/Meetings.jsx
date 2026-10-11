@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher } from '../lib/teachers.js'
+import { teacherSchools } from '../lib/teams.js'
 import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
@@ -74,7 +75,8 @@ function attendeeIdsForRows(rowIds, meetings) {
 }
 
 // ─── Inline edit form shared by both the past-meetings and upcoming-meetings lists ──
-function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teachers, onSave, onCancel, onDelete }) {
+function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, initialSchool, teachers, onSave, onCancel, onDelete }) {
+  const [school, setSchool] = useState(initialSchool || '')
   const [date, setDate] = useState(initialDate)
   const [content, setContent] = useState(initialContent)
   const [selectedTeacherIds, setSelectedTeacherIds] = useState(() => new Set(initialAttendeeIds))
@@ -84,6 +86,12 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teac
   // the mentor filling in what was discussed is a stronger signal than the date
   // field, which may simply not have been updated yet.
   const willBeScheduled = isFuture && !content.trim()
+  // Schools the chosen attendees are linked to; the picker only matters when there's
+  // more than one (a teacher who teaches in two schools).
+  const schoolOptions = [...new Set([
+    ...teachers.filter(t => selectedTeacherIds.has(t.id)).flatMap(teacherSchools),
+    ...(school ? [school] : []),
+  ])]
 
   function toggleTeacher(id) {
     setSelectedTeacherIds(prev => {
@@ -105,7 +113,7 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teac
     }
     setSaving(true)
     try {
-      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds] })
+      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds], school })
     } finally {
       setSaving(false)
     }
@@ -168,6 +176,20 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, teac
         </div>
         <p className="text-xs text-gray-400 mt-1">{selectedTeacherIds.size} נבחרו</p>
       </div>
+      {schoolOptions.length > 1 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1">בית ספר</p>
+          <select
+            value={school}
+            onChange={e => setSchool(e.target.value)}
+            disabled={saving}
+            className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="">אוטומטי (לפי המורים)</option>
+            {schoolOptions.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      )}
       <div className="flex gap-2">
         <button onClick={handleSave} disabled={saving}
           className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
@@ -283,7 +305,7 @@ export default function Meetings() {
   // for an unchecked one), and recomputes metadata.attendees on every surviving/new
   // row from the final selected set — then reloads so the recency banner / upcoming
   // list / past list all stay consistent.
-  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds }) {
+  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds, school }) {
     const createdAt = new Date(`${date}T12:00:00`).toISOString()
     const trimmedContent = content.trim() || null
     try {
@@ -310,10 +332,12 @@ export default function Meetings() {
             meeting_status: _meetingStatus,
             meeting_group_id: _meetingGroupId,
             attendees: _oldAttendees,
+            school: _oldSchool,
             ...restMetadata
           } = existing.metadata || {}
           const metadata = {
             ...restMetadata,
+            ...(school ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
             saved_at: new Date().toISOString(),
@@ -327,6 +351,7 @@ export default function Meetings() {
           finalRowIds.push(existing.id)
         } else {
           const metadata = {
+            ...(school ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
             saved_at: new Date().toISOString(),
@@ -437,6 +462,7 @@ export default function Meetings() {
                       initialDate={dateInputValue(g.date)}
                       initialContent={firstRowContent(g.rowIds, meetings)}
                       initialAttendeeIds={attendeeIdsForRows(g.rowIds, meetings)}
+                      initialSchool={g.schoolOverride}
                       teachers={contacts}
                       onSave={vals => saveMeetingEdit(g.rowIds, vals)}
                       onCancel={() => setEditingGroupId(null)}
@@ -519,6 +545,7 @@ export default function Meetings() {
                                   initialDate={dateInputValue(meetingGroup.date)}
                                   initialContent={firstRowContent(meetingGroup.rowIds, meetings)}
                                   initialAttendeeIds={attendeeIdsForRows(meetingGroup.rowIds, meetings)}
+                                  initialSchool={meetingGroup.schoolOverride}
                                   teachers={contacts}
                                   onSave={vals => saveMeetingEdit(meetingGroup.rowIds, vals)}
                                   onCancel={() => setEditingGroupId(null)}

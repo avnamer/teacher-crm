@@ -31,13 +31,19 @@ export function groupMeetingsByGroupId(rows, contactsById) {
   const groups = {}
   for (const row of rows) {
     const groupId = row.metadata?.meeting_group_id || row.id
-    groups[groupId] ??= { groupId, date: row.created_at, rowIds: [], contactNames: [], schools: new Set() }
+    groups[groupId] ??= { groupId, date: row.created_at, rowIds: [], contactNames: [], schools: new Set(), schoolOverride: null }
     groups[groupId].rowIds.push(row.id)
+    // A school picked by hand on the edit form (metadata.school) wins over the
+    // attendees' own schools — for teachers who teach in two schools.
+    if (row.metadata?.school) groups[groupId].schoolOverride = row.metadata.school
     const contact = contactsById[row.contact_id]
     if (contact) {
       groups[groupId].contactNames.push(contact.name)
       if (contact.school) groups[groupId].schools.add(contact.school)
     }
   }
-  return Object.values(groups).map(g => ({ ...g, schools: [...g.schools] }))
+  return Object.values(groups).map(g => ({
+    ...g,
+    schools: g.schoolOverride ? [g.schoolOverride] : [...g.schools],
+  }))
 }

@@ -62,6 +62,13 @@ A code fix that never deployed will look identical to a bug that wasn't fixed, f
 the user's side — this caused significant back-and-forth in a past session before
 the real cause (paused deploys) was found.
 
+## After every code change: run it locally and send the link
+
+When you finish changing code in `frontend/` or `backend/`, never end with just "done".
+Use the `run-teacher-crm` skill to start the app locally (reuse the servers if already up),
+confirm it loads, and finish with the link (http://localhost:5173) plus a short Hebrew
+checklist of what to click. Local only — no push, no credits. Skip for docs/skills-only changes.
+
 ## Work started from the phone / cloud sessions
 
 Cloud sessions push to a `claude/*` branch and the user then checks it on their PC.

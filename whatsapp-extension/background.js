@@ -295,6 +295,7 @@ async function runSync() {
           action: 'readDM',
           contactId: teacher.id,
           teacherName: teacher.name,
+          phone,
           lastMessageAt: teacher.lastMessageAt,
         })
         if (!result?.ok) throw new Error(result?.error || 'קריאת ההודעות נכשלה')

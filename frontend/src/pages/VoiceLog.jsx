@@ -71,6 +71,7 @@ export default function VoiceLog() {
           meeting_date: result.meeting_date || null,
           destination: result.destination || null,
           distance_km: result.distance_km ?? null,
+          future_meetings: result.future_meetings || [],
         },
       })
       markDone(id)

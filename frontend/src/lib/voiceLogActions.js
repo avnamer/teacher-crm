@@ -301,6 +301,19 @@ export async function saveTeacherTask({ contactId, items, content, metadata, cre
   })
 }
 
+// Future meetings a recording agreed on, to offer as "also schedule". The AI lists them
+// (extra.future_meetings); for recordings analysed before it did, fall back to follow-up
+// items that are about meeting and carry a date.
+export function suggestFutureMeetings(extra, actionItems, refIso) {
+  const fromAi = (extra?.future_meetings || []).filter(m => m?.date)
+  const raw = fromAi.length > 0
+    ? fromAi
+    : (actionItems || [])
+        .filter(a => a.due_date && /להיפגש|לפגוש|פגישה|להיפגש/.test(a.text || ''))
+        .map(a => ({ date: a.due_date, topic: a.text }))
+  return raw.map(m => ({ date: fixStaleYear(m.date, refIso), topic: m.topic || '' }))
+}
+
 // ─── Stale years in spoken dates ───────────────────────────────────────────
 
 // "ב-1 באפריל" carries no year, and the AI sometimes picks an old one. A follow-up date

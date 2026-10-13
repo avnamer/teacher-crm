@@ -39,8 +39,10 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
   "column_label": "כותרת קצרה ותמציתית (2-5 מילים) לעמודת המשימה — רק ל-new_task_column, אחרת null",
   "meeting_date": "YYYY-MM-DD — תאריך הפגישה העתידית (future_meeting) או תאריך הנסיעה (admin_trip), אחרת null",
   "destination": "יעד הנסיעה — רק ל-admin_trip, אחרת null",
-  "distance_km": מספר ק״מ אם נאמר, אחרת null
+  "distance_km": מספר ק״מ אם נאמר, אחרת null,
+  "future_meetings": [ { "date": "YYYY-MM-DD", "topic": "נושא הפגישה, אם נאמר" } ]
 }
+ב-"future_meetings" החזר כל פגישה עתידית עם המורה שנקבעה או הוסכמה בהקלטה, בנוסף ל-route (למשל תיעוד שיחה שבסופה "קבענו להיפגש ב-1 באפריל"). רק פגישה עם תאריך ברור; אחרת החזר [].
 תאריכים יחסיים ("מחר", "ביום שלישי", "בשבוע הבא") חשב לפי תאריך היום שיצוין בתחילת ההודעה. תאריך בלי שנה ("ב-1 באפריל") הוא המופע הקרוב של אותו תאריך החל מהיום — לעולם לא שנה שעברה.
 אם לא הוזכר שם מורה, החזר "teacher_name_spoken": null. אם אין מטלות המשך, החזר "action_items": [].
 ב-"assignee" של כל מטלה ציין של מי היא: "admin" — המנטור (המדבר/הכותב, אבנר) צריך לעשות אותה; "teacher" — המורה צריך/ה לעשות אותה; "both" — מטלה משותפת לשניהם (למשל "לקבוע פגישת המשך", "נבדוק יחד"). נסח כל מטלה כך שיהיה ברור מה צריך לעשות.
@@ -137,6 +139,9 @@ export async function analyzeCallTranscript(transcript, today, weekday) {
     meeting_date: normalizeIsoDate(parsed.meeting_date),
     destination: typeof parsed.destination === 'string' && parsed.destination.trim() ? parsed.destination.trim() : null,
     distance_km: normalizeKm(parsed.distance_km),
+    future_meetings: (Array.isArray(parsed.future_meetings) ? parsed.future_meetings : [])
+      .map(m => ({ date: normalizeIsoDate(m?.date), topic: typeof m?.topic === 'string' ? m.topic.trim() : '' }))
+      .filter(m => m.date),
   }
 }
 

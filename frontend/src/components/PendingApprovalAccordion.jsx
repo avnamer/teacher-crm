@@ -3,6 +3,7 @@ import {
   CATEGORIES,
   categoryOf,
   fixStaleYear,
+  suggestFutureMeetings,
   findOption,
   createScheduledMeeting,
   saveTeacherTask,
@@ -40,6 +41,10 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
   const [meetingDate, setMeetingDate] = useState(extra.meeting_date || '') // future_meeting / admin_trip
   const [destination, setDestination] = useState(extra.destination || '')
   const [distanceKm, setDistanceKm] = useState(extra.distance_km ?? '')
+  // Meetings agreed in this recording (e.g. "קבענו להיפגש ב-1 באפריל"), each offered as a
+  // scheduled meeting on the Meetings page alongside whatever the log itself is saved as.
+  const [followUps, setFollowUps] = useState(() =>
+    suggestFutureMeetings(rawItem.extra, item.action_items, rawItem.created_at).map(m => ({ ...m, checked: true })))
   const [summary, setSummary] = useState(item.summary || '')
   const [columnLabel, setColumnLabel] = useState(item.column_label || '')
   const [alsoManagement, setAlsoManagement] = useState(false) // admin_task only: also a "משימה מההנהלה"
@@ -54,6 +59,12 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
   const needsSingleTeacher = (route === 'teacher_call' && !isMeeting) || route === 'teacher_task'
   const activeOption = findOption(route, communicationType)?.option
   const todayStr = new Date().toISOString().split('T')[0]
+  const followUpTeacherIds = isMeeting ? [...selectedMeetingTeacherIds] : (route === 'teacher_call' && teacherId ? [teacherId] : [])
+  const showFollowUps = route === 'teacher_call' && followUps.length > 0
+
+  function updateFollowUp(i, patch) {
+    setFollowUps(prev => prev.map((f, j) => (j === i ? { ...f, ...patch } : f)))
+  }
   const [selectedMeetingTeacherIds, setSelectedMeetingTeacherIds] = useState(() => new Set())
   const [loadingMeetingDefaults, setLoadingMeetingDefaults] = useState(false)
 
@@ -128,6 +139,10 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
       if (selectedMeetingTeacherIds.size === 0) return alert('יש לבחור לפחות מורה אחת לפגישה')
       if (!meetingDate) return alert('יש להזין תאריך לפגישה')
       if (meetingDate < todayStr) return alert('תאריך הפגישה כבר עבר — לפגישה שהתקיימה יש לבחור "תיעוד תוכן פגישה"')
+    }
+    const followUpsToSave = showFollowUps ? followUps.filter(f => f.checked) : []
+    for (const f of followUpsToSave) {
+      if (!f.date || f.date < todayStr) return alert('תאריך הפגישה העתידית חסר או שכבר עבר — יש לתקן אותו או לבטל את הסימון')
     }
     if (route === 'admin_trip') {
       if (!meetingDate) return alert('יש להזין תאריך לנסיעה')
@@ -225,6 +240,12 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
           for (const t of tasks) {
             await addManagementTask({ text: t.text, due_date: t.due_date, sender_name: 'הקלטה קולית' })
           }
+        }
+      }
+      if (followUpsToSave.length > 0 && followUpTeacherIds.length > 0) {
+        const teachersById = Object.fromEntries(teachers.map(t => [t.id, t]))
+        for (const f of followUpsToSave) {
+          await createScheduledMeeting({ teacherIds: followUpTeacherIds, teachersById, date: f.date, content: f.topic })
         }
       }
     } catch (err) {
@@ -485,6 +506,23 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
             </div>
           )}
         </>
+      )}
+
+      {showFollowUps && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-600">פגישה עתידית שנקבעה בהקלטה</label>
+          {followUps.map((f, i) => (
+            <div key={i} className="flex items-center gap-2 flex-wrap rounded-lg bg-purple-50 p-2">
+              <input type="checkbox" checked={f.checked} disabled={saving} className="w-4 h-4"
+                onChange={(e) => updateFollowUp(i, { checked: e.target.checked })} />
+              <span className="text-sm text-purple-800">📅 הוסף לעמוד הפגישות</span>
+              <input type="date" value={f.date} min={todayStr} disabled={saving || !f.checked}
+                onChange={(e) => updateFollowUp(i, { date: e.target.value })}
+                className="border border-gray-300 rounded-lg p-1 text-sm disabled:opacity-50" />
+              {f.topic && <span className="text-xs text-gray-500 w-full">{f.topic}</span>}
+            </div>
+          ))}
+        </div>
       )}
 
       {route === 'admin_task' && (

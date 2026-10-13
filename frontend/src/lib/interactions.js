@@ -57,6 +57,8 @@ export function isSentMessage(interaction) {
  * type (calls, meetings, journal entries) always counts.
  */
 export function countsTowardRecency(interaction) {
+  // A task I gave a teacher by voice (journal row, see saveTeacherTask) isn't contact with her.
+  if (interaction?.metadata?.route === 'teacher_task') return false
   if (interaction?.type === 'whatsapp') {
     const messages = interaction.metadata?.messages
     // No message detail (older rows) — can't tell who wrote, so keep counting it.

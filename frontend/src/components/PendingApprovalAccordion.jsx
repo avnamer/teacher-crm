@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import {
-  ROUTES,
-  COMMUNICATION_TYPES,
+  CATEGORIES,
+  categoryOf,
+  findOption,
+  createScheduledMeeting,
+  saveTeacherTask,
   ADMIN_ROW_NAME,
   ensureAdminContact,
   addCustomColumnFromVoice,
@@ -11,6 +14,7 @@ import {
   mergeOrCreateMeeting,
 } from '../lib/voiceLogActions.js'
 import { deletePendingVoiceLog } from '../lib/pendingVoiceLog.js'
+import { createAdminMeeting } from '../lib/adminMeetings.js'
 import { addManagementTask } from '../lib/managementTasks.js'
 import { ASSIGNEE_LABEL } from '../lib/interactions.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
@@ -26,6 +30,11 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
   const [overrideMatch, setOverrideMatch] = useState(!item.matched_contact_id && matchResult.candidates.length === 0)
   const [manualSearch, setManualSearch] = useState('')
   const [communicationType, setCommunicationType] = useState(item.communication_type)
+  const [category, setCategory] = useState(categoryOf(item.route, item.communication_type))
+  const extra = item.extra || {}
+  const [meetingDate, setMeetingDate] = useState(extra.meeting_date || '') // future_meeting / admin_trip
+  const [destination, setDestination] = useState(extra.destination || '')
+  const [distanceKm, setDistanceKm] = useState(extra.distance_km ?? '')
   const [summary, setSummary] = useState(item.summary || '')
   const [columnLabel, setColumnLabel] = useState(item.column_label || '')
   const [alsoManagement, setAlsoManagement] = useState(false) // admin_task only: also a "משימה מההנהלה"
@@ -33,6 +42,13 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
   const [error, setError] = useState(null)
 
   const isMeeting = route === 'teacher_call' && communicationType === 'meeting'
+  const isFutureMeeting = route === 'future_meeting'
+  const needsAttendees = isMeeting || isFutureMeeting
+  const hasSummary = ['teacher_call', 'admin_task', 'teacher_task', 'management_task', 'future_meeting', 'admin_trip'].includes(route)
+  const hasActionItems = ['teacher_call', 'admin_task', 'teacher_task', 'management_task'].includes(route)
+  const needsSingleTeacher = (route === 'teacher_call' && !isMeeting) || route === 'teacher_task'
+  const activeOption = findOption(route, communicationType)?.option
+  const todayStr = new Date().toISOString().split('T')[0]
   const [selectedMeetingTeacherIds, setSelectedMeetingTeacherIds] = useState(() => new Set())
   const [loadingMeetingDefaults, setLoadingMeetingDefaults] = useState(false)
 
@@ -56,6 +72,31 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMeeting])
 
+  // A future meeting starts with the teacher the AI recognized, if any.
+  useEffect(() => {
+    if (!isFutureMeeting) return
+    const primaryId = matchResult.certain?.id ?? teacherId
+    if (primaryId) setSelectedMeetingTeacherIds(prev => (prev.size ? prev : new Set([primaryId])))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFutureMeeting])
+
+  function pickCategory(value) {
+    setCategory(value)
+    // Keep the selection only if it also belongs to the new category (a held meeting is in two).
+    const inNewCategory = CATEGORIES.find(c => c.value === value).options.some(o => o.key === activeOption?.key)
+    if (!inNewCategory) setRoute(null)
+  }
+
+  function pickOption(option) {
+    setRoute(option.route)
+    if (option.communicationTypes) {
+      if (!option.communicationTypes.includes(communicationType)) setCommunicationType(option.communicationTypes[0])
+    } else {
+      setCommunicationType(null)
+    }
+    if (option.route === 'admin_trip' && !meetingDate) setMeetingDate(item.created_at.slice(0, 10))
+  }
+
   function toggleMeetingTeacher(id) {
     setSelectedMeetingTeacherIds(prev => {
       const next = new Set(prev)
@@ -72,15 +113,58 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
   async function handleApprove() {
     if (!route) return alert('יש לבחור סוג תיעוד לפני האישור')
     if (route === 'teacher_call' && !communicationType) return alert('יש לבחור סוג אינטראקציה לפני האישור')
-    if (route === 'teacher_call' && !isMeeting && !teacherId) return alert('יש לבחור מורה לפני האישור')
+    if (needsSingleTeacher && !teacherId) return alert('יש לבחור מורה לפני האישור')
     if (isMeeting && selectedMeetingTeacherIds.size === 0) return alert('יש לבחור לפחות מורה אחת שהשתתפה בפגישה')
     if (route === 'new_task_column' && !columnLabel.trim()) return alert('יש להזין כותרת לעמודה')
+    const taskItems = (item.action_items || []).filter(a => a.text)
+    const tasksToSave = taskItems.length > 0 ? taskItems : (summary.trim() ? [{ text: summary.trim(), due_date: null }] : [])
+    if ((route === 'teacher_task' || route === 'management_task') && tasksToSave.length === 0) return alert('לא זוהתה משימה — יש לכתוב אותה בשדה הסיכום')
+    if (isFutureMeeting) {
+      if (selectedMeetingTeacherIds.size === 0) return alert('יש לבחור לפחות מורה אחת לפגישה')
+      if (!meetingDate) return alert('יש להזין תאריך לפגישה')
+      if (meetingDate < todayStr) return alert('תאריך הפגישה כבר עבר — לפגישה שהתקיימה יש לבחור "תיעוד תוכן פגישה"')
+    }
+    if (route === 'admin_trip') {
+      if (!meetingDate) return alert('יש להזין תאריך לנסיעה')
+      if (!destination.trim()) return alert('יש להזין יעד לנסיעה')
+    }
 
     setSaving(true)
     setError(null)
     try {
       if (route === 'new_task_column') {
         await addCustomColumnFromVoice(columnLabel)
+      } else if (isFutureMeeting) {
+        const teachersById = Object.fromEntries(teachers.map(t => [t.id, t]))
+        await createScheduledMeeting({
+          teacherIds: [...selectedMeetingTeacherIds],
+          teachersById,
+          date: meetingDate,
+          content: summary,
+        })
+      } else if (route === 'admin_trip') {
+        await createAdminMeeting({ date: meetingDate, destination, purpose: summary, distanceKm })
+      } else if (route === 'management_task') {
+        for (const t of tasksToSave) {
+          await addManagementTask({ text: t.text, due_date: t.due_date, sender_name: 'הקלטה קולית' })
+        }
+      } else if (route === 'teacher_task') {
+        await saveTeacherTask({
+          contactId: teacherId,
+          items: tasksToSave,
+          content: summary,
+          metadata: {
+            transcript: item.transcript,
+            teacher_name_spoken: item.teacher_name_spoken,
+            confirmed_by_user: true,
+            source: 'voice_pwa',
+            route,
+          },
+          createdAt: item.created_at,
+        })
+        const calendarWarning = await createCalendarEventsForActionItems(
+          tasksToSave, teachers.find(t => t.id === teacherId)?.name || '', summary)
+        if (calendarWarning) alert(calendarWarning)
       } else if (isMeeting) {
         const teachersById = Object.fromEntries(teachers.map(t => [t.id, t]))
         const teacherIds = [...selectedMeetingTeacherIds]
@@ -178,57 +262,111 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
       <div>
         <label className="block text-sm font-medium text-gray-600 mb-1">סוג התיעוד</label>
         <div className="flex gap-2 flex-wrap">
-          {ROUTES.map(r => (
+          {CATEGORIES.map(c => (
             <button
-              key={r.value}
+              key={c.value}
               type="button"
               disabled={saving}
-              onClick={() => setRoute(r.value)}
+              onClick={() => pickCategory(c.value)}
               className={`px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-60 ${
-                route === r.value
+                category === c.value
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {r.label}
+              {c.label}
             </button>
           ))}
         </div>
-        {!route && (
+        {!category && (
           <p className="text-orange-600 text-xs mt-1">לא זוהתה כוונה ברורה מההקלטה — יש לבחור ידנית</p>
         )}
       </div>
 
-      {route === 'teacher_call' && (
+      {category && (
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">סוג האינטראקציה</label>
+          <label className="block text-sm font-medium text-gray-600 mb-1">מה לשמור</label>
           <div className="flex gap-2 flex-wrap">
-            {COMMUNICATION_TYPES.map(t => (
+            {CATEGORIES.find(c => c.value === category).options.map(o => (
               <button
-                key={t.value}
+                key={o.key}
                 type="button"
                 disabled={saving}
-                onClick={() => setCommunicationType(t.value)}
+                onClick={() => pickOption(o)}
                 className={`px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-60 ${
-                  communicationType === t.value
+                  activeOption?.key === o.key
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'border-gray-300 text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {t.icon} {t.label}
+                {o.label}
               </button>
             ))}
           </div>
-          {!communicationType && (
+          {!route && (
+            <p className="text-orange-600 text-xs mt-1">יש לבחור מה לשמור</p>
+          )}
+          {route === 'teacher_call' && !communicationType && (
             <p className="text-orange-600 text-xs mt-1">לא זוהה סוג אינטראקציה ברור מההקלטה — יש לבחור ידנית</p>
           )}
         </div>
       )}
 
-      {isMeeting && (
+      {isFutureMeeting && (
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">תאריך הפגישה</label>
+          <input
+            type="date"
+            value={meetingDate}
+            min={todayStr}
+            onChange={(e) => setMeetingDate(e.target.value)}
+            disabled={saving}
+            className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
+          />
+          {!meetingDate && <p className="text-orange-600 text-xs mt-1">לא זוהה תאריך מההקלטה — יש להזין ידנית</p>}
+        </div>
+      )}
+
+      {route === 'admin_trip' && (
+        <div className="space-y-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">תאריך הנסיעה</label>
+            <input
+              type="date"
+              value={meetingDate}
+              onChange={(e) => setMeetingDate(e.target.value)}
+              disabled={saving}
+              className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">יעד / מקום</label>
+            <input
+              type="text"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              disabled={saving}
+              className="w-full border border-gray-300 rounded-lg p-2 text-right disabled:opacity-60"
+              dir="rtl"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">מרחק בק״מ</label>
+            <input
+              type="number" min="0" step="0.1" inputMode="decimal"
+              value={distanceKm}
+              onChange={(e) => setDistanceKm(e.target.value)}
+              disabled={saving}
+              className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
+            />
+          </div>
+        </div>
+      )}
+
+      {needsAttendees && (
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="block text-sm font-medium text-gray-600">מורים שהשתתפו בפגישה</label>
+            <label className="block text-sm font-medium text-gray-600">{isFutureMeeting ? 'מורים בפגישה' : 'מורים שהשתתפו בפגישה'}</label>
             {loadingMeetingDefaults && <span className="text-xs text-gray-400">טוען פגישה מתוכננת...</span>}
           </div>
           <div className="border rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
@@ -253,7 +391,7 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
         </div>
       )}
 
-      {route === 'teacher_call' && !isMeeting && (
+      {needsSingleTeacher && (
         <div>
           <label className="block text-sm font-medium text-gray-600 mb-1">מורה שזוהה</label>
           {matchResult.certain && teacherId === matchResult.certain.id && !overrideMatch ? (
@@ -309,10 +447,12 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
         </div>
       )}
 
-      {(route === 'teacher_call' || route === 'admin_task') && (
+      {hasSummary && (
         <>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">סיכום</label>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              {route === 'admin_trip' ? 'מטרת הנסיעה' : isFutureMeeting ? 'נושא הפגישה' : (route === 'teacher_task' || route === 'management_task') ? 'סיכום / המשימה' : 'סיכום'}
+            </label>
             <textarea
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
@@ -323,7 +463,7 @@ function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
             />
           </div>
 
-          {(item.action_items || []).length > 0 && (
+          {hasActionItems && (item.action_items || []).length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">מטלות המשך</label>
               <ul className="space-y-1">

@@ -416,3 +416,10 @@ ALTER TABLE management_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE management_tasks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Owner full access" ON management_settings FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
 CREATE POLICY "Owner full access" ON management_tasks    FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- מיגרציה: שדות נוספים לתיעוד קולי (2026-10-13, הרץ פעם אחת)
+-- extra = { meeting_date, destination, distance_km } — תאריך פגישה עתידית / יעד ומרחק של נסיעה מנהלית,
+-- כפי ש-Claude זיהה מההקלטה. ממלא מראש את כרטיס האישור; בלי העמודה ההקלטה עדיין נשמרת, בלי המילוי.
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE pending_voice_logs ADD COLUMN IF NOT EXISTS extra JSONB DEFAULT '{}';

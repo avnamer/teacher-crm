@@ -59,13 +59,13 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
   const needsSingleTeacher = (route === 'teacher_call' && !isMeeting) || route === 'teacher_task'
   const activeOption = findOption(route, communicationType)?.option
   const todayStr = new Date().toISOString().split('T')[0]
-  const followUpTeacherIds = isMeeting ? [...selectedMeetingTeacherIds] : (route === 'teacher_call' && teacherId ? [teacherId] : [])
   const showFollowUps = route === 'teacher_call' && followUps.length > 0
 
   function updateFollowUp(i, patch) {
     setFollowUps(prev => prev.map((f, j) => (j === i ? { ...f, ...patch } : f)))
   }
   const [selectedMeetingTeacherIds, setSelectedMeetingTeacherIds] = useState(() => new Set())
+  const followUpTeacherIds = isMeeting ? [...selectedMeetingTeacherIds] : (route === 'teacher_call' && teacherId ? [teacherId] : [])
   const [loadingMeetingDefaults, setLoadingMeetingDefaults] = useState(false)
 
   // When the log is first classified (or reclassified) as a meeting, pre-check the

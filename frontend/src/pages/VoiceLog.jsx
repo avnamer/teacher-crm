@@ -67,6 +67,12 @@ export default function VoiceLog() {
         action_items: result.action_items || [],
         mentioned_dates: result.mentioned_dates || [],
         column_label: result.column_label || null,
+        extra: {
+          meeting_date: result.meeting_date || null,
+          destination: result.destination || null,
+          distance_km: result.distance_km ?? null,
+          future_meetings: result.future_meetings || [],
+        },
       })
       markDone(id)
     } catch (err) {

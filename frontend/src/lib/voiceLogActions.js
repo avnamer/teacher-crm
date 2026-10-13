@@ -8,13 +8,60 @@ export const ADMIN_ROW_NAME = 'מנהל המערכת'
 const ADMIN_ROW_ROLE = 'מנהל מערכת'
 const ADMIN_ROW_PHONE = '000-ADMIN'
 
-export const ROUTES = [
-  { value: 'teacher_call', label: '👤 שיחה עם מורה' },
-  { value: 'admin_task', label: '📝 משימה אישית לי' },
-  { value: 'new_task_column', label: '📋 משימה לכל המורים' },
+import { INTERACTION_TYPES } from './interactions.js'
+
+// The approval card's two-level menu: a category, then what exactly to save. Each option
+// is a (route, communicationType) pair — `route` is what the AI classifies into
+// (pending_voice_logs.route) and decides where the approved log is written;
+// `communicationTypes` lists the stored types the option matches (a "WhatsApp message"
+// is either a one-way 'message_sent' or a two-way 'correspondence'), the first being
+// what clicking it stores.
+export const CATEGORIES = [
+  {
+    value: 'interaction',
+    label: '🧑‍🏫 אינטראקציה עם מורה',
+    options: [
+      { key: 'call', label: '📞 שיחה', route: 'teacher_call', communicationTypes: ['phone_call'] },
+      { key: 'whatsapp', label: '💬 הודעת וואטסאפ', route: 'teacher_call', communicationTypes: ['correspondence', 'message_sent'] },
+      { key: 'held_meeting', label: '🤝 תיעוד פגישה שהתקיימה', route: 'teacher_call', communicationTypes: ['meeting'] },
+    ],
+  },
+  {
+    value: 'task',
+    label: '✅ הוספת משימה',
+    options: [
+      { key: 'mentor_task', label: '📝 משימה למנטור (לי)', route: 'admin_task' },
+      { key: 'teacher_task', label: '🧑‍🏫 משימה למורה', route: 'teacher_task' },
+      { key: 'management_task', label: '🏢 משימת הנהלה', route: 'management_task' },
+      { key: 'all_teachers_task', label: '📋 משימה לכל המורים', route: 'new_task_column' },
+    ],
+  },
+  {
+    value: 'meetings',
+    label: '🚗 פגישות ונסיעות',
+    options: [
+      { key: 'future_meeting', label: '📅 הוספת פגישה עתידית', route: 'future_meeting' },
+      { key: 'held_meeting', label: '🤝 תיעוד תוכן פגישה', route: 'teacher_call', communicationTypes: ['meeting'] },
+      { key: 'admin_trip', label: '🚗 נסיעה מנהלית', route: 'admin_trip' },
+    ],
+  },
 ]
 
-import { INTERACTION_TYPES } from './interactions.js'
+/** The option matching a pending log's (route, communication_type), or undefined. */
+export function findOption(route, communicationType) {
+  for (const category of CATEGORIES) {
+    for (const option of category.options) {
+      if (option.route !== route) continue
+      if (!option.communicationTypes || option.communicationTypes.includes(communicationType)) return { category, option }
+    }
+  }
+  return undefined
+}
+
+/** The category of a pending log — its first matching one, or null when unclassified. */
+export function categoryOf(route, communicationType) {
+  return findOption(route, communicationType)?.category.value ?? null
+}
 
 // The voice-log approval flow classifies a single recorded phone call — 'mailing_list'
 // is a bulk WhatsApp send and never applies here, so it's left out of this picker even
@@ -207,4 +254,77 @@ export async function mergeOrCreateMeeting({ teacherIds, teachersById, createdAt
     }
   }
   return rowIds
+}
+
+// ─── Future meeting ────────────────────────────────────────────────────────
+
+// Schedules a meeting that hasn't happened yet: one 'scheduled' row per attendee, tied
+// together by a shared meeting_group_id — the same shape AddMeetingModal writes for a
+// future date, so the Meetings page and the dashboard pick it up unchanged.
+export async function createScheduledMeeting({ teacherIds, teachersById, date, content }) {
+  const createdAt = new Date(`${date}T12:00:00`).toISOString()
+  const groupId = crypto.randomUUID()
+  const rows = teacherIds.map(id => ({
+    contact_id: id,
+    type: 'meeting',
+    content: content?.trim() || null,
+    created_at: createdAt,
+    metadata: {
+      attendees: teacherIds.filter(o => o !== id).map(o => teachersById[o]?.name).filter(Boolean),
+      meeting_group_id: groupId,
+      saved_at: new Date().toISOString(),
+      meeting_status: 'scheduled',
+      source: 'voice_pwa',
+    },
+  }))
+  const { error } = await supabase.from('interactions').insert(rows)
+  if (error) throw error
+}
+
+// ─── Task for a teacher ────────────────────────────────────────────────────
+
+// A task that the teacher has to do, said by voice without a call to document. It is a
+// 'journal' row on the teacher (the type the table already has for notes that aren't a
+// call/message/meeting — so it neither resets the teacher's "last contact" nor shows as
+// one), carrying the tasks as action_items with assignee 'teacher'; the teacher's page
+// and the dashboard's open-tasks banner list them like any other follow-up.
+export async function saveTeacherTask({ contactId, items, content, metadata, createdAt }) {
+  await saveInteractionRow({
+    contactId,
+    type: 'journal',
+    content,
+    metadata: {
+      ...metadata,
+      action_items: items.map(i => ({ text: i.text, due_date: i.due_date || null, done: false, assignee: 'teacher' })),
+    },
+    createdAt,
+  })
+}
+
+// Future meetings a recording agreed on, to offer as "also schedule". The AI lists them
+// (extra.future_meetings); for recordings analysed before it did, fall back to follow-up
+// items that are about meeting and carry a date.
+export function suggestFutureMeetings(extra, actionItems, refIso) {
+  const fromAi = (extra?.future_meetings || []).filter(m => m?.date)
+  const raw = fromAi.length > 0
+    ? fromAi
+    : (actionItems || [])
+        .filter(a => a.due_date && /להיפגש|לפגוש|פגישה|להיפגש/.test(a.text || ''))
+        .map(a => ({ date: a.due_date, topic: a.text }))
+  return raw.map(m => ({ date: fixStaleYear(m.date, refIso), topic: m.topic || '' }))
+}
+
+// ─── Stale years in spoken dates ───────────────────────────────────────────
+
+// "ב-1 באפריל" carries no year, and the AI sometimes picks an old one. A follow-up date
+// more than 60 days before the recording is almost certainly that mistake, so move it to
+// its next occurrence on/after the recording. refIso: the recording's created_at.
+export function fixStaleYear(date, refIso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return date
+  const ref = new Date(refIso)
+  const cutoff = new Date(ref.getTime() - 60 * 86400000)
+  let d = new Date(`${date}T12:00:00`)
+  if (d >= cutoff) return date
+  while (d < cutoff) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate(), 12)
+  return calendarDateStr(d.toISOString())
 }

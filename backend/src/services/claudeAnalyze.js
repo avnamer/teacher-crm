@@ -3,13 +3,23 @@ import { normalizeText } from './whatsappDedup.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה קולית שמבצע מנטור של מורים בבית ספר, ומזהה לאיזה מתוך 3 סוגי תיעוד הכוונה מתאימה:
+const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה קולית שמבצע מנטור של מורים בבית ספר (אבנר), ומזהה לאיזה סוג תיעוד הכוונה מתאימה. הסוגים מחולקים ל-3 קטגוריות:
 
-1. route "teacher_call" — שיחה עם מורה ספציפי: המדבר מתאר שיחה או פגישה עם מורה מסוים, ומזכיר את שמה/ו.
-2. route "admin_task" — משימה אישית למנהל המערכת (המנטור עצמו), לא קשורה למורה ספציפי.
-3. route "new_task_column" — משימה שחלה על כל המורים ברשימה (מעקב/משימה שצריך לבדוק מול כל מורה).
+קטגוריה א׳ — אינטראקציה עם מורה:
+1. route "teacher_call" — המדבר מתאר שיחה / הודעה / פגישה שכבר התקיימה עם מורה מסוים, ומזכיר את שמה/ו.
 
-אם אין די מידע כדי להחליט בבירור בין השלושה, החזר route "unclear".
+קטגוריה ב׳ — משימות:
+2. route "admin_task" — משימה לאבנר עצמו (מנטור), לא קשורה למורה ספציפי.
+3. route "teacher_task" — משימה שמורה מסוים צריך/ה לעשות (אבנר מבקש או מנחה מורה לעשות משהו, בלי שתועדה שיחה). דורש שם מורה.
+4. route "management_task" — משימה שהגיעה מהנהלת התוכנית / טק סקול (בני, מיקה, "ההנהלה ביקשה") ואבנר צריך לבצע.
+5. route "new_task_column" — משימה שחלה על כל המורים ברשימה (מעקב שצריך לבדוק מול כל מורה).
+
+קטגוריה ג׳ — פגישות ונסיעות:
+6. route "future_meeting" — פגישה עתידית עם מורה/ים (קביעת פגישה, "אני נפגש עם X ביום שלישי").
+7. route "admin_trip" — נסיעה מנהלית שאינה קשורה למורה או לבית ספר (משרדים, איסוף ציוד, ישיבה בעירייה...).
+(תיעוד תוכן של פגישה שכבר התקיימה עם מורה הוא route "teacher_call" עם communication_type "meeting".)
+
+אם אין די מידע כדי להחליט בבירור, החזר route "unclear".
 
 עבור route "teacher_call" בלבד, זהה גם את ערוץ התקשורת שתואר, בשדה "communication_type":
 - "phone_call" — שיחת טלפון (למשל "התקשרתי אליה", "דיברנו בטלפון")
@@ -20,19 +30,28 @@ const SYSTEM_PROMPT = `אתה עוזר שמנתח תמלול של הקלטה ק�
 
 החזר אך ורק JSON תקני בפורמט הבא, בלי שום טקסט נוסף לפניו או אחריו:
 {
-  "route": "teacher_call" | "admin_task" | "new_task_column" | "unclear",
-  "teacher_name_spoken": "השם שנאמר עבור המורה (רלוונטי רק ל-teacher_call), אחרת null",
+  "route": "teacher_call" | "admin_task" | "teacher_task" | "management_task" | "new_task_column" | "future_meeting" | "admin_trip" | "unclear",
+  "teacher_name_spoken": "השם שנאמר עבור המורה (ב-teacher_call, teacher_task, future_meeting), אחרת null",
   "communication_type": "phone_call" | "message_sent" | "correspondence" | "meeting" | null,
-  "summary": "סיכום קצר של התוכן, 2-3 משפטים (לא רלוונטי ל-new_task_column)",
+  "summary": "סיכום קצר של התוכן, 2-3 משפטים. ב-future_meeting — נושא/מטרת הפגישה. ב-admin_trip — מטרת הנסיעה. לא רלוונטי ל-new_task_column",
   "action_items": [ { "text": "תיאור המטלה", "due_date": "YYYY-MM-DD או null אם לא הוזכר תאריך", "assignee": "admin" | "teacher" | "both" } ],
   "mentioned_dates": ["YYYY-MM-DD"],
-  "column_label": "כותרת קצרה ותמציתית (2-5 מילים) לעמודת המשימה — רק ל-new_task_column, אחרת null"
+  "column_label": "כותרת קצרה ותמציתית (2-5 מילים) לעמודת המשימה — רק ל-new_task_column, אחרת null",
+  "meeting_date": "YYYY-MM-DD — תאריך הפגישה העתידית (future_meeting) או תאריך הנסיעה (admin_trip), אחרת null",
+  "destination": "יעד הנסיעה — רק ל-admin_trip, אחרת null",
+  "distance_km": מספר ק״מ אם נאמר, אחרת null,
+  "future_meetings": [ { "date": "YYYY-MM-DD", "topic": "נושא הפגישה, אם נאמר" } ]
 }
+ב-"future_meetings" החזר כל פגישה עתידית עם המורה שנקבעה או הוסכמה בהקלטה, בנוסף ל-route (למשל תיעוד שיחה שבסופה "קבענו להיפגש ב-1 באפריל"). רק פגישה עם תאריך ברור; אחרת החזר [].
+תאריכים יחסיים ("מחר", "ביום שלישי", "בשבוע הבא") חשב לפי תאריך היום שיצוין בתחילת ההודעה. תאריך בלי שנה ("ב-1 באפריל") הוא המופע הקרוב של אותו תאריך החל מהיום — לעולם לא שנה שעברה.
 אם לא הוזכר שם מורה, החזר "teacher_name_spoken": null. אם אין מטלות המשך, החזר "action_items": [].
 ב-"assignee" של כל מטלה ציין של מי היא: "admin" — המנטור (המדבר/הכותב, אבנר) צריך לעשות אותה; "teacher" — המורה צריך/ה לעשות אותה; "both" — מטלה משותפת לשניהם (למשל "לקבוע פגישת המשך", "נבדוק יחד"). נסח כל מטלה כך שיהיה ברור מה צריך לעשות.
-ב-route "admin_task" כל המטלות הן "admin".`
+ב-route "admin_task" ו-"management_task" כל המטלות הן "admin"; ב-"teacher_task" כל המטלות הן "teacher".`
 
-const VALID_ROUTES = new Set(['teacher_call', 'admin_task', 'new_task_column', 'unclear'])
+const VALID_ROUTES = new Set([
+  'teacher_call', 'admin_task', 'teacher_task', 'management_task', 'new_task_column',
+  'future_meeting', 'admin_trip', 'unclear',
+])
 const VALID_COMMUNICATION_TYPES = new Set(['phone_call', 'message_sent', 'correspondence', 'meeting'])
 
 // claude-sonnet-5 thinks (adaptive) by default, and thinking tokens count against
@@ -74,12 +93,24 @@ function extractJson(text) {
   return fenced ? fenced[1].trim() : trimmed
 }
 
-export async function analyzeCallTranscript(transcript) {
+/** Pure: 'YYYY-MM-DD' or null. */
+export function normalizeIsoDate(value) {
+  return ISO_DATE.test(value || '') ? value : null
+}
+
+/** Pure: a non-negative number of km, or null. */
+export function normalizeKm(value) {
+  const n = typeof value === 'number' ? value : parseFloat(String(value ?? '').replace(',', '.'))
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/** today: 'YYYY-MM-DD' (Israel); weekday: e.g. "יום ה׳" — for resolving relative dates. */
+export async function analyzeCallTranscript(transcript, today, weekday) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: transcript }],
+    messages: [{ role: 'user', content: today ? `תאריך היום: ${today} (${weekday})\n\nההקלטה:\n${transcript}` : transcript }],
   })
 
   // claude-sonnet-5 can return a leading `thinking` block before the `text`
@@ -104,6 +135,13 @@ export async function analyzeCallTranscript(transcript) {
     action_items: normalizeActionItems(parsed.action_items),
     mentioned_dates: Array.isArray(parsed.mentioned_dates) ? parsed.mentioned_dates : [],
     column_label: parsed.column_label ?? null,
+    // Extras for the meetings/trips category — stored in pending_voice_logs.extra.
+    meeting_date: normalizeIsoDate(parsed.meeting_date),
+    destination: typeof parsed.destination === 'string' && parsed.destination.trim() ? parsed.destination.trim() : null,
+    distance_km: normalizeKm(parsed.distance_km),
+    future_meetings: (Array.isArray(parsed.future_meetings) ? parsed.future_meetings : [])
+      .map(m => ({ date: normalizeIsoDate(m?.date), topic: typeof m?.topic === 'string' ? m.topic.trim() : '' }))
+      .filter(m => m.date),
   }
 }
 

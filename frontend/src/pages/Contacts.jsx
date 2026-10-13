@@ -255,7 +255,7 @@ export default function Contacts() {
       const { data, error } = await supabase
         .from('interactions')
         .select('id, contact_id, metadata')
-        .in('type', ['phone_call', 'whatsapp'])
+        .in('type', ['phone_call', 'whatsapp', 'journal']) // journal: tasks given to a teacher by voice
         .in('contact_id', contactIds)
       if (error) throw error
       const map = {}

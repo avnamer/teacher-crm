@@ -4,6 +4,8 @@ import { israelDateStr } from '../services/whatsappDedup.js'
 
 const router = Router()
 
+const israelWeekday = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long' })
+
 // POST /api/voice-log/analyze
 router.post('/analyze', async (req, res) => {
   const { transcript } = req.body
@@ -11,15 +13,14 @@ router.post('/analyze', async (req, res) => {
     return res.status(400).json({ message: 'לא התקבל תמלול' })
   }
   try {
-    const result = await analyzeCallTranscript(transcript)
+    const now = new Date()
+    const result = await analyzeCallTranscript(transcript, israelDateStr(now), israelWeekday.format(now))
     res.json(result)
   } catch (err) {
     console.error('[voice-log/analyze]', err)
     res.status(500).json({ message: 'ניתוח השיחה נכשל: ' + err.message })
   }
 })
-
-const israelWeekday = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long' })
 
 // POST /api/voice-log/admin-tasks — splits a "משימה לעצמי" recording into tasks.
 router.post('/admin-tasks', async (req, res) => {

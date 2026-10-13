@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   CATEGORIES,
   categoryOf,
+  fixStaleYear,
   findOption,
   createScheduledMeeting,
   saveTeacherTask,
@@ -23,7 +24,11 @@ function formatRecordedAt(iso) {
   return new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-function PendingVoiceLogCard({ item, teachers, onApproved, onDeleted }) {
+function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted }) {
+  const item = {
+    ...rawItem,
+    action_items: (rawItem.action_items || []).map(a => ({ ...a, due_date: fixStaleYear(a.due_date, rawItem.created_at) })),
+  }
   const matchResult = matchTeacher(item.teacher_name_spoken, teachers)
   const [route, setRoute] = useState(item.route)
   const [teacherId, setTeacherId] = useState(item.matched_contact_id)

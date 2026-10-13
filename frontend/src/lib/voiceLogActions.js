@@ -300,3 +300,18 @@ export async function saveTeacherTask({ contactId, items, content, metadata, cre
     createdAt,
   })
 }
+
+// ─── Stale years in spoken dates ───────────────────────────────────────────
+
+// "ב-1 באפריל" carries no year, and the AI sometimes picks an old one. A follow-up date
+// more than 60 days before the recording is almost certainly that mistake, so move it to
+// its next occurrence on/after the recording. refIso: the recording's created_at.
+export function fixStaleYear(date, refIso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return date
+  const ref = new Date(refIso)
+  const cutoff = new Date(ref.getTime() - 60 * 86400000)
+  let d = new Date(`${date}T12:00:00`)
+  if (d >= cutoff) return date
+  while (d < cutoff) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate(), 12)
+  return calendarDateStr(d.toISOString())
+}

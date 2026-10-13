@@ -52,9 +52,17 @@ export function isSentMessage(interaction) {
  * Whether an interaction should count toward the "last contact" recency indicators
  * (dashboard bucket coloring, "יומן קשר אחרון" column). Sending a message doesn't mean it
  * reached anyone — only once someone has marked "הייתה תגובה" on it does it count as real
- * contact. Every other interaction type (calls, meetings, journal entries) always counts.
+ * contact. The same goes for synced WhatsApp chats: a day made up only of messages I sent
+ * (sender 'me') isn't contact — the teacher has to have written back. Every other interaction
+ * type (calls, meetings, journal entries) always counts.
  */
 export function countsTowardRecency(interaction) {
+  if (interaction?.type === 'whatsapp') {
+    const messages = interaction.metadata?.messages
+    // No message detail (older rows) — can't tell who wrote, so keep counting it.
+    if (!Array.isArray(messages) || messages.length === 0) return true
+    return messages.some(m => m.sender !== 'me')
+  }
   if (!isSentMessage(interaction)) return true
   return !!interaction?.metadata?.responded
 }

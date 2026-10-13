@@ -16,7 +16,7 @@
 // "still seeing the old error" report can be checked in 2 seconds instead of
 // guessing whether the extension+tab reload actually picked up the latest
 // code (this has been the actual cause more than once during testing).
-const CONTENT_JS_BUILD = '2026-10-07-33'
+const CONTENT_JS_BUILD = '2026-10-12-34'
 console.log(`%c[whatsapp-sync] content.js loaded — build ${CONTENT_JS_BUILD}`, 'color: #2563eb; font-weight: bold')
 
 // Confirmed live (2026-09-29): WhatsApp's virtualized list only responds to
@@ -514,6 +514,14 @@ async function clickUntilChatOpens(item, previousFirstId) {
 // correct chat is already on screen. Groups have no such deep link, so they
 // still go through search+click, immediately below.
 
+// Emoji (WhatsApp renders them as <img alt>, and ♥️ vs ❤️ differ), the "|" and
+// "/" separators and spacing don't survive the title round trip reliably — a
+// group named "מנטורים 26/27 | Tech School 🚀♥️" was never found by exact
+// comparison. Compare only the letters and digits.
+function looseChatKey(str) {
+  return (str || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
 async function openChatByName(name) {
   const searchBox = requireFirst(WA_SELECTORS.chatSearchBox, document, 'תיבת חיפוש')
   const before = currentFirstMessageId()
@@ -524,7 +532,8 @@ async function openChatByName(name) {
   const items = queryAllFirst(WA_SELECTORS.chatListItem, document)
   const match = items.find(item => {
     const title = queryFirst(WA_SELECTORS.chatListItemTitle, item)
-    return title?.textContent?.trim() === name
+    const text = title?.textContent?.trim() || ''
+    return text === name || looseChatKey(text) === looseChatKey(name)
   })
   if (!match) return false
   const switched = await clickUntilChatOpens(match, before)
@@ -721,11 +730,33 @@ function matchGroupSender(senderName, teachers) {
 // error at all. Waits for the header to show the expected teacher's name
 // (WhatsApp's own saved contact name commonly has extra text appended, e.g.
 // "ענת נקש טק סקול" for a CRM contact named "ענת נקש" — a substring check).
-async function waitForChatHeader(expectedNameSubstr) {
+async function waitForChatHeader(expectedNameSubstr, phone) {
+  const nameKey = looseChatKey(expectedNameSubstr)
+  const tokens = (expectedNameSubstr || '').split(/\s+/).map(looseChatKey).filter(t => t.length >= 3)
+  const phoneDigits = (phone || '').replace(/\D/g, '')
+  const matches = header => {
+    const key = looseChatKey(header)
+    if (!key) return false
+    if (key.includes(nameKey)) return true
+    if (phoneDigits && header.replace(/\D/g, '').endsWith(phoneDigits.slice(-9))) return true
+    // The CRM name and the name saved in WhatsApp's address book often differ
+    // in spelling or length (extra/missing surname) — any shared name word counts.
+    return tokens.some(t => key.includes(t))
+  }
+  let lastHeader = ''
   for (let i = 0; i < 30; i++) {
-    const header = queryFirst(WA_SELECTORS.chatHeaderName, document)?.textContent || ''
-    if (header && header.includes(expectedNameSubstr)) return true
+    lastHeader = queryFirst(WA_SELECTORS.chatHeaderName, document)?.textContent || ''
+    if (matches(lastHeader)) return true
     await sleep(500)
+  }
+  // The tab was freshly loaded at /send?phone=<this teacher>, so whatever chat is
+  // open now can only be the one that deep link resolved to — unless WhatsApp
+  // showed its "number isn't on WhatsApp" dialog instead (no chat, or a stale one).
+  const invalid = /not on WhatsApp|isn.t on WhatsApp|אינו ב-?WhatsApp|אינו משתמש|לא נמצא ב-?WhatsApp/i
+    .test(document.querySelector('[role="dialog"], [data-animate-modal-popup]')?.textContent || '')
+  if (lastHeader && !invalid && queryFirst(WA_SELECTORS.messagePane, document)) {
+    console.warn('[whatsapp-sync] chat header', JSON.stringify(lastHeader), 'does not resemble', expectedNameSubstr, '- accepting (phone deep link)')
+    return true
   }
   return false
 }
@@ -733,11 +764,11 @@ async function waitForChatHeader(expectedNameSubstr) {
 // Called after background.js has already navigated this tab to the right
 // DM via web.whatsapp.com/send?phone=... — the chat is expected to already
 // be open (or opening); this just waits for it to settle and reads it.
-async function readCurrentDM(contactId, teacherName, lastMessageAt) {
+async function readCurrentDM(contactId, teacherName, lastMessageAt, phone) {
   if (!queryFirst(WA_SELECTORS.appLoaded, document)) {
     throw new Error('WhatsApp Web לא פתוח או לא מחובר במחשב')
   }
-  if (!(await waitForChatHeader(teacherName))) {
+  if (!(await waitForChatHeader(teacherName, phone))) {
     throw new Error(`הניווט לא נחת על השיחה של ${teacherName} (בדקו את מספר הטלפון שלה/שלו ב-CRM)`)
   }
   const messages = await collectMessages(null, lastMessageAt)
@@ -849,7 +880,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false // synchronous response
   }
   if (message.action === 'readDM') {
-    readCurrentDM(message.contactId, message.teacherName, message.lastMessageAt)
+    readCurrentDM(message.contactId, message.teacherName, message.lastMessageAt, message.phone)
       .then(() => sendResponse({ ok: true }))
       .catch(err => sendResponse({ ok: false, error: err.message }))
     return true // async response

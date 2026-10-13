@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
-import { isMyTeacher } from '../lib/teachers.js'
+import { isMyTeacher, isAdminRow } from '../lib/teachers.js'
 import { teacherSchools } from '../lib/teams.js'
 import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
+import { isAdminMeeting, monthKey, updateAdminMeeting, deleteAdminMeeting } from '../lib/adminMeetings.js'
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
@@ -208,6 +209,92 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, init
   )
 }
 
+// ─── Inline edit form for an administrative meeting (no teachers / school) ──
+function AdminMeetingEditForm({ row, onSave, onCancel, onDelete }) {
+  const [date, setDate] = useState(dateInputValue(row.created_at))
+  const [destination, setDestination] = useState(row.metadata?.destination || '')
+  const [purpose, setPurpose] = useState(row.content || '')
+  const [distanceKm, setDistanceKm] = useState(row.metadata?.distance_km ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function run(fn) {
+    setSaving(true)
+    try {
+      await fn()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'w-full px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400'
+  return (
+    <div className="space-y-2">
+      <input type="date" value={date} onChange={e => setDate(e.target.value)}
+        className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400" />
+      <input value={destination} onChange={e => setDestination(e.target.value)} placeholder="יעד / מקום" className={inputCls} />
+      <input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="מטרה / תיאור" className={inputCls} />
+      <input type="number" min="0" step="0.1" inputMode="decimal" value={distanceKm}
+        onChange={e => setDistanceKm(e.target.value)} placeholder='מרחק בק״מ' className={inputCls} />
+      <div className="flex gap-2">
+        <button disabled={saving} onClick={() => {
+          if (!destination.trim()) { alert('יש למלא יעד / מקום'); return }
+          run(() => onSave({ date, destination, purpose, distanceKm }))
+        }} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
+          {saving ? 'שומר...' : 'שמור'}
+        </button>
+        <button onClick={onCancel} disabled={saving} className="px-2 py-1 border rounded text-xs hover:bg-gray-100">ביטול</button>
+        <button disabled={saving} onClick={() => {
+          if (confirm('למחוק את הפגישה המנהלית לצמיתות?')) run(onDelete)
+        }} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 disabled:opacity-50 mr-auto">
+          מחק פגישה
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Month trip report: every held meeting of the chosen month, school and admin ──
+function TripSummary({ month, trips }) {
+  const adminTrips = trips.filter(t => t.admin)
+  const totalKm = adminTrips.reduce((sum, t) => sum + (t.km || 0), 0)
+  const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-lg font-semibold text-gray-800">דוח נסיעות — {monthLabel}</h2>
+        <div className="text-sm text-gray-700">
+          {trips.length} נסיעות · {trips.length - adminTrips.length} בבתי ספר · {adminTrips.length} מנהליות
+          {totalKm > 0 && <> · <b>{Math.round(totalKm * 10) / 10} ק״מ</b> (מנהליות)</>}
+        </div>
+      </div>
+      {trips.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-2">אין פגישות בחודש הזה</p>
+      ) : (
+        <table className="w-full text-sm bg-white rounded-lg overflow-hidden">
+          <thead className="bg-gray-100 text-gray-600 text-xs">
+            <tr>
+              <th className="text-right px-3 py-2">תאריך</th>
+              <th className="text-right px-3 py-2">יעד</th>
+              <th className="text-right px-3 py-2">מטרה</th>
+              <th className="text-right px-3 py-2">ק״מ</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {trips.map(t => (
+              <tr key={t.key}>
+                <td className="px-3 py-2 whitespace-nowrap">{new Date(t.date).toLocaleDateString('he-IL')}</td>
+                <td className="px-3 py-2">{t.place}{t.admin && <span className="text-xs text-gray-400 mr-1">(מנהלית)</span>}</td>
+                <td className="px-3 py-2 text-gray-600">{t.purpose}</td>
+                <td className="px-3 py-2">{t.km ?? ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 // ─── School-recency stats (mirrors Contacts.jsx's ContactStats, bucketed by school) ──
 const SCHOOL_STAT_TILES = [
   { key: 'green', label: 'נפגשנו בחודש האחרון', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', dot: 'bg-green-500' },
@@ -264,6 +351,11 @@ export default function Meetings() {
   const [openMeetingId, setOpenMeetingId] = useState(null)
   const [editingGroupId, setEditingGroupId] = useState(null)
   const [openMergeKey, setOpenMergeKey] = useState(null)
+  const [adminMeetings, setAdminMeetings] = useState([])
+  const [openAdmin, setOpenAdmin] = useState(false)
+  const [editingAdminId, setEditingAdminId] = useState(null)
+  // '' = all months, otherwise 'YYYY-MM' — filters the lists below and drives the trip report.
+  const [month, setMonth] = useState('')
 
   useEffect(() => {
     loadAll()
@@ -278,6 +370,20 @@ export default function Meetings() {
       if (cErr) throw cErr
       const myTeachers = (contactsData || []).filter(isMyTeacher)
       setContacts(myTeachers)
+
+      // Administrative meetings hang off the hidden admin pseudo-contact.
+      const adminContact = (contactsData || []).find(isAdminRow)
+      if (adminContact) {
+        const { data: adminData, error: aErr } = await supabase
+          .from('interactions')
+          .select('id, contact_id, content, metadata, created_at')
+          .eq('type', 'meeting')
+          .eq('contact_id', adminContact.id)
+        if (aErr) throw aErr
+        setAdminMeetings((adminData || []).filter(isAdminMeeting))
+      } else {
+        setAdminMeetings([])
+      }
 
       const myTeacherIds = myTeachers.map(c => c.id)
       if (myTeacherIds.length === 0) {
@@ -422,8 +528,33 @@ export default function Meetings() {
   for (const cluster of findDuplicateMeetingClusters(meetings, contactsById)) {
     for (const g of cluster.groups) clusterByGroupId[g.groupId] = cluster
   }
-  const bySchool = groupMeetingsBySchool(completedGroups)
-  const lastAtBySchool = Object.fromEntries(bySchool.map(g => [g.school, g.lastAt]))
+  // Stats tiles use every meeting; the lists below honour the month filter.
+  const allBySchool = groupMeetingsBySchool(completedGroups)
+  const lastAtBySchool = Object.fromEntries(allBySchool.map(g => [g.school, g.lastAt]))
+  const inMonth = date => !month || monthKey(date) === month
+  const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date)))
+  const visibleUpcoming = upcoming.filter(g => inMonth(g.date))
+  const visibleAdmin = adminMeetings
+    .filter(r => inMonth(r.created_at))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  const trips = !month ? [] : [
+    ...completedGroups.filter(g => g.date && monthKey(g.date) === month).map(g => ({
+      key: g.groupId,
+      date: g.date,
+      place: g.schools.join(', ') || 'ללא בית ספר',
+      purpose: firstRowContent(g.rowIds, meetings),
+      km: null,
+      admin: false,
+    })),
+    ...visibleAdmin.map(r => ({
+      key: r.id,
+      date: r.created_at,
+      place: r.metadata?.destination || '—',
+      purpose: r.content || '',
+      km: r.metadata?.distance_km ?? null,
+      admin: true,
+    })),
+  ].sort((a, b) => new Date(a.date) - new Date(b.date))
   const allSchools = [...new Set(contacts.map(c => c.school).filter(Boolean))]
   const buckets = { green: [], orange: [], red: [] }
   for (const school of allSchools) {
@@ -452,10 +583,21 @@ export default function Meetings() {
             onToggleBucket={key => setExpandedBucket(prev => (prev === key ? null : key))}
           />
 
-          {upcoming.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap bg-white border rounded-xl px-4 py-3">
+            <label className="text-sm text-gray-600">סינון לפי חודש:</label>
+            <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+              className="px-2 py-1 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-400" />
+            {month && (
+              <button onClick={() => setMonth('')} className="text-xs text-blue-600 hover:underline">הצג את כל החודשים</button>
+            )}
+          </div>
+
+          {month && <TripSummary month={month} trips={trips} />}
+
+          {visibleUpcoming.length > 0 && (
             <div className="space-y-2">
               <h2 className="text-lg font-semibold text-gray-800">פגישות עתידיות</h2>
-              {upcoming.map(g => (
+              {visibleUpcoming.map(g => (
                 <div key={g.groupId} className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
                   {editingGroupId === g.groupId ? (
                     <MeetingEditForm
@@ -492,9 +634,67 @@ export default function Meetings() {
             </div>
           )}
 
+          {visibleAdmin.length > 0 && (
+            <div className="rounded-xl border border-gray-300 bg-white overflow-hidden">
+              <button onClick={() => setOpenAdmin(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-right">
+                <span className="font-medium text-gray-800">🧾 פגישות מנהליות</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    {visibleAdmin.length} פגישות
+                  </span>
+                  <span className="text-gray-400 text-sm">{openAdmin ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {openAdmin && (
+                <div className="border-t border-gray-200 divide-y divide-gray-100">
+                  {visibleAdmin.map(r => (
+                    <div key={r.id} className="px-4 py-3">
+                      {editingAdminId === r.id ? (
+                        <AdminMeetingEditForm
+                          row={r}
+                          onCancel={() => setEditingAdminId(null)}
+                          onSave={async vals => {
+                            try {
+                              await updateAdminMeeting(r, vals)
+                              setEditingAdminId(null)
+                              await loadAll()
+                            } catch (err) { alert('שגיאה בעדכון הפגישה: ' + err.message) }
+                          }}
+                          onDelete={async () => {
+                            try {
+                              await deleteAdminMeeting(r.id)
+                              setEditingAdminId(null)
+                              await loadAll()
+                            } catch (err) { alert('שגיאה במחיקת הפגישה: ' + err.message) }
+                          }}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <span className="font-medium text-gray-800">{r.metadata?.destination || '—'}</span>
+                            {r.content && <span className="text-sm text-gray-500 mr-2">{r.content}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {r.metadata?.distance_km != null && (
+                              <span className="text-xs text-gray-500">{r.metadata.distance_km} ק״מ</span>
+                            )}
+                            <span className="text-xs text-gray-400">{new Date(r.created_at).toLocaleDateString('he-IL')}</span>
+                            <button onClick={() => setEditingAdminId(r.id)}
+                              className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">✏️</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             {bySchool.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">אין פגישות שתועדו</p>
+              <p className="text-gray-500 text-center py-8">{month ? 'אין פגישות בחודש הזה' : 'אין פגישות שתועדו'}</p>
             ) : (
               bySchool.map(schoolEntry => {
                 const days = daysSince(schoolEntry.lastAt)

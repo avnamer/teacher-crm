@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { analyzeManualMeeting } from '../lib/meetingAnalysis.js'
+import { createAdminMeeting } from '../lib/adminMeetings.js'
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
@@ -11,6 +12,10 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
+  // פגישה מנהלית: a trip with no school / teacher (offices, picking up equipment).
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [destination, setDestination] = useState('')
+  const [distanceKm, setDistanceKm] = useState('')
 
   // String comparison works here because both sides are 'YYYY-MM-DD'.
   const isFuture = date > todayStr()
@@ -32,6 +37,18 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (isAdmin) {
+      setSaving(true)
+      try {
+        await createAdminMeeting({ date, destination, purpose: content, distanceKm })
+        onSaved()
+      } catch (err) {
+        alert('שגיאה בשמירת הפגישה: ' + err.message)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
     if (selectedIds.size === 0) {
       alert('יש לבחור לפחות מורה אחד')
       return
@@ -88,6 +105,10 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
       <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">הוסף פגישה</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
+          <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded-lg bg-gray-50">
+            <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} className="w-4 h-4" />
+            פגישה מנהלית (נסיעה ללא בית ספר / מורה מסוים)
+          </label>
           <div>
             <label className="text-sm text-gray-500 mb-1 block">תאריך הפגישה</label>
             <input
@@ -97,13 +118,14 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
               onChange={e => setDate(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             />
-            {isFuture && (
+            {isFuture && !isAdmin && (
               <p className="text-xs text-purple-600 mt-1">
                 פגישה עתידית — ניתן להשלים את התוכן אחרי שהיא מתקיימת
               </p>
             )}
           </div>
 
+          {!isAdmin && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-sm text-gray-500">מורים שהשתתפו *</label>
@@ -135,17 +157,42 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
               </p>
             )}
           </div>
+          )}
+
+          {isAdmin && (
+            <>
+              <div>
+                <label className="text-sm text-gray-500 mb-1 block">יעד / מקום *</label>
+                <input
+                  required
+                  value={destination}
+                  onChange={e => setDestination(e.target.value)}
+                  placeholder="למשל: משרדי העירייה"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-500 mb-1 block">מרחק בק״מ</label>
+                <input
+                  type="number" min="0" step="0.1" inputMode="decimal"
+                  value={distanceKm}
+                  onChange={e => setDistanceKm(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <label className="text-sm text-gray-500 mb-1 block">
-              תוכן הפגישה{isFuture ? '' : ' *'}
+              {isAdmin ? 'מטרה / תיאור' : `תוכן הפגישה${isFuture ? '' : ' *'}`}
             </label>
             <textarea
-              required={!isFuture}
+              required={!isFuture && !isAdmin}
               rows={4}
               value={content}
               onChange={e => setContent(e.target.value)}
-              placeholder={isFuture ? 'ניתן להשאיר ריק ולהשלים אחרי הפגישה' : 'על מה דיברתם בפגישה?'}
+              placeholder={isAdmin ? 'למשל: איסוף ציוד' : isFuture ? 'ניתן להשאיר ריק ולהשלים אחרי הפגישה' : 'על מה דיברתם בפגישה?'}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
             />
           </div>

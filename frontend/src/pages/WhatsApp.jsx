@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { backendFetch } from '../lib/api.js'
+import ContactPickerModal from '../components/ContactPickerModal.jsx'
 import SendQueueModal from '../components/SendQueueModal.jsx'
 import { messageForContact, phoneProblem, MANUAL_DRIVER, fetchDriver } from '../lib/whatsapp.js'
 import {
@@ -24,6 +25,8 @@ export default function WhatsApp() {
   const [loading, setLoading] = useState(true)
   const [driver, setDriver] = useState(MANUAL_DRIVER)
   const [showBulkSend, setShowBulkSend] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickedIds, setPickedIds] = useState(null)
 
   useEffect(() => {
     loadTemplates()
@@ -59,13 +62,22 @@ export default function WhatsApp() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">WhatsApp</h1>
-        <button
-          onClick={() => setShowBulkSend(true)}
-          disabled={templates.length === 0}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          📤 שלח לקבוצה
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowPicker(true)}
+            disabled={templates.length === 0}
+            className="px-4 py-2 bg-white text-green-700 border border-green-600 rounded-lg text-sm hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            👥 שלח לאנשי קשר מהרשימה
+          </button>
+          <button
+            onClick={() => setShowBulkSend(true)}
+            disabled={templates.length === 0}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            📤 שלח לקבוצה
+          </button>
+        </div>
       </div>
 
       {/* Sending mode */}
@@ -172,6 +184,22 @@ export default function WhatsApp() {
           template={editingTemplate}
           onClose={() => setShowEditor(false)}
           onSaved={() => { setShowEditor(false); loadTemplates() }}
+        />
+      )}
+
+      {/* Hand-picked contacts: picker, then the bulk modal with those contacts preset */}
+      {showPicker && (
+        <ContactPickerModal
+          onClose={() => setShowPicker(false)}
+          onConfirm={ids => { setShowPicker(false); setPickedIds(ids) }}
+        />
+      )}
+      {pickedIds && (
+        <BulkSendModal
+          templates={templates}
+          driver={driver}
+          initialContactIds={pickedIds}
+          onClose={() => setPickedIds(null)}
         />
       )}
 

@@ -8,6 +8,27 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // (e.g. a manual correction after stopping) — calling it mid-listen will be
 // overwritten by the next speech result, since transcript is otherwise
 // derived from the recognition engine's own accumulated output.
+// Appends a newly finalized phrase to the text so far without duplicating
+// anything the engine echoed back. After a silent session restart, Android
+// Chrome may report a "final" result that repeats the tail of what was already
+// said (or all of it) plus the new bit, so we find the longest word overlap
+// between the end of `soFar` and the start of `text` and add only the rest.
+function mergeFinal(soFar, text) {
+  if (!soFar) return text
+  if (soFar.includes(text)) return soFar
+  const a = soFar.split(/\s+/)
+  const b = text.split(/\s+/)
+  for (let k = Math.min(a.length, b.length); k >= 1; k--) {
+    // A single overlapping word is only trusted when it is the whole new text
+    // (otherwise a legitimately repeated word like "כן כן" would be swallowed).
+    if (k === 1 && b.length > 1) break
+    if (a.slice(-k).join(' ') === b.slice(0, k).join(' ')) {
+      return [...a, ...b.slice(k)].join(' ')
+    }
+  }
+  return soFar + ' ' + text
+}
+
 export function useSpeechToText({ lang = 'he-IL' } = {}) {
   const [supported] = useState(() => Boolean(
     typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -44,18 +65,7 @@ export function useSpeechToText({ lang = 'he-IL' } = {}) {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript.trim()
         if (event.results[i].isFinal && text) {
-          const phrases = finalPhrasesRef.current
-          const soFar = phrases.join(' ')
-          if (text === phrases[phrases.length - 1]) {
-            // Exact repeat of the last phrase — engine re-fired it, ignore.
-          } else if (soFar && text.startsWith(soFar)) {
-            // Engine restarted its session and echoed everything said so far
-            // plus the new bit as one cumulative result — replace rather
-            // than append, or the old part would appear twice.
-            finalPhrasesRef.current = [text]
-          } else {
-            phrases.push(text)
-          }
+          finalPhrasesRef.current = [mergeFinal(finalPhrasesRef.current.join(' '), text)]
         } else if (!event.results[i].isFinal) {
           interim += text
         }

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL } from '../lib/teachers.js'
 import { fetchAdminTasks, setAdminTaskDone } from '../lib/adminTasks.js'
 import { interactionIcon, typeLabel } from '../lib/interactions.js'
+import { loadSchoolLocation, saveSchoolLocation, clearSchoolLocation, mapsPinUrl } from '../lib/schoolLocations.js'
 import { allSchools, teacherSchools, teamsInSchool, studentCount, formatTeam } from '../lib/teams.js'
 import {
   schoolTeachers, similarSchoolNames, openTeacherTasks, closeTeacherTask, adminTasksForSchool, TASK_SOURCE,
@@ -121,6 +122,7 @@ export default function Schools() {
       ) : (
         <>
           <TeachersSection school={school} teachers={teachers} />
+          <LocationSection key={`loc-${school}`} school={school} />
           <MainTasksSection teachers={teachers} taskColumns={base.taskColumns} />
           {!rowsReady ? (
             <p className="text-center text-gray-500 py-6">טוען משימות ופגישות…</p>
@@ -201,6 +203,80 @@ function TeachersSection({ school, teachers }) {
           )
         })}
       </ul>
+    </Card>
+  )
+}
+
+// ─── מיקום: קישור Google Maps → קואורדינטות (חישוב ק"מ לנסיעות) ──────────────
+
+function LocationSection({ school }) {
+  const [loc, setLoc] = useState(undefined) // undefined = loading, null = none saved
+  const [error, setError] = useState('')
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    loadSchoolLocation(school)
+      .then(row => { if (!cancelled) setLoc(row) })
+      .catch(err => { if (!cancelled) { setLoc(null); setError(err.message) } })
+    return () => { cancelled = true }
+  }, [school])
+
+  async function save() {
+    if (!link.trim() || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      setLoc(await saveSchoolLocation(school, link.trim()))
+      setLink('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    if (busy || !window.confirm('למחוק את המיקום של בית הספר?')) return
+    setBusy(true)
+    try {
+      await clearSchoolLocation(school)
+      setLoc(null)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card title="📍 מיקום בית הספר">
+      {loc === undefined ? (
+        <p className="text-sm text-gray-400">טוען…</p>
+      ) : (
+        <div className="space-y-3">
+          {loc && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="text-gray-800 font-medium">{loc.label || 'מיקום שמור'}</span>
+              <span dir="ltr" className="text-gray-500">{loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}</span>
+              <a href={mapsPinUrl(loc)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">פתח במפות</a>
+              <button onClick={remove} disabled={busy} className="text-red-600 hover:underline mr-auto">מחק</button>
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input value={link} onChange={e => setLink(e.target.value)} dir="ltr"
+              onKeyDown={e => e.key === 'Enter' && save()}
+              placeholder="הדבק קישור שיתוף מ-Google Maps (https://maps.app.goo.gl/…)"
+              className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+            <button onClick={save} disabled={busy || !link.trim()}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">
+              {busy ? 'שומר…' : loc ? 'עדכן מיקום' : 'שמור מיקום'}
+            </button>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+      )}
     </Card>
   )
 }

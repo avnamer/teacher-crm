@@ -6,6 +6,7 @@ import meetingsRouter from './src/routes/meetings.js'
 import voiceLogRouter from './src/routes/voiceLog.js'
 import whatsappRouter from './src/routes/whatsapp.js'
 import whatsappSyncRouter from './src/routes/whatsappSync.js'
+import schoolLocationRouter from './src/routes/schoolLocation.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -44,6 +45,7 @@ app.use('/api/google', googleRouter)
 app.use('/api/meetings', meetingsRouter)
 app.use('/api/voice-log', voiceLogRouter)
 app.use('/api/whatsapp', whatsappRouter)
+app.use('/api/school-location', schoolLocationRouter)
 // No CORS entry needed for this one: the extension's background worker calls it
 // with host_permissions declared in its manifest, which exempts it from CORS
 // entirely (unlike a content script or a web page). Auth here is the shared

@@ -55,6 +55,7 @@ copying them into pages:
 - `whatsapp.js`: phone → E.164, template resolution, click-to-chat URL, send driver
 - `adminTasks.js`: the admin's personal tasks ("המשימות שלי" panel on the dashboard) — reads/edits `metadata.action_items` on the `is_admin_row` contact's `interactions` rows; monthly recurring tasks spawn the next occurrence as a new row on mark-done
 - `teams.js`: a teacher's teams ("נבחרות", `custom_fields.teams`) — which school each team belongs to (`teamSchool`), every school a teacher is linked to, grade options, teaching days/hours (`planOf`, `formatPlan`). Edited only in `components/TeamsCard.jsx` on the teacher page
+- `schoolLocations.js`: a school's pinned location (`school_locations` row; the pasted Google Maps link is resolved to coordinates by the backend) — used by the monday-trips-sync skill to price drives
 - `schools.js`: the Schools page's derivations — school teachers, open teacher tasks (meeting copies merged), which admin tasks concern a school (linked teacher, else school/teacher name in the text), which records count as meeting history, short-summary caching
 - `voiceLogActions.js`: save/approve logic for voice-log routes; `mergeOrCreateMeeting` folds an approved meeting voice-log into a same-day pre-scheduled meeting's `interactions` rows (or creates a fresh group) instead of writing a disconnected row
 
@@ -71,6 +72,7 @@ copying them into pages:
 | `POST /api/meetings/analyze` | Send manually typed meeting notes + meeting date to Claude; returns summary/action items/dates (frontend `lib/meetingAnalysis.js` writes them to every group row's `metadata`) |
 | `POST /api/meetings/merge` | Send several records of the same meeting (`notes[]`, oldest first) + date to Claude; returns one consolidated `content` + summary/action items/dates, later notes winning on conflict. Also returns `sources` (what was taken from each record). Used by `lib/meetingAnalysis.js`: `findDuplicateMeetingClusters()` finds held meetings on the same day sharing a school or attendee, `previewMeetingMerge()` calls this endpoint, and nothing is saved until the admin approves in `MeetingMergeProposal` (dashboard banner / Meetings page) → `applyMeetingMerge()`, or rejects → `declineMeetingMerge()` |
 | `POST /api/meetings/short-summary` | `{ text, brief? }` → `{ summary }`: 2-3 line summary of one history record, for the Schools page (`brief: true` = 1-2 sentences, for the sticky notes) (stored by the frontend in the record's `metadata.history_summary`) |
+| `POST /api/school-location/resolve` | `{ url }` → `{ lat, lng, label, url }` from a pasted Google Maps link (share link `maps.app.goo.gl/…` or full URL). Redirects are followed by hand and only to Google hosts |
 | `POST /api/whatsapp-sync/management-messages` | Extension → backend for a management group: `services/managementTasks.js` keeps only task-givers' messages, Claude extracts tasks for all mentors (`audience: all`) or Avner by name (`me`) into `management_tasks`; the group's `last_message_at` cursor advances only after success |
 | `POST /api/whatsapp-sync/management-private` | Extension → backend for a private chat with a task-giver (`management_settings.private_chats`, listed in `/targets`): same extraction as management groups, the chat name stands in as sender; the cursor is stored on that `private_chats` entry |
 | `GET /api/whatsapp/status` | Active send driver + capabilities |
@@ -101,6 +103,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 | `whatsapp_sync_state` | Single row (`id='global'`): last run status/error, progress, failed teachers, unmatched group senders, extension heartbeat |
 | `management_settings` | Single row: `task_givers` (WhatsApp names of Benny/Mika), `my_names`, `private_chats` (`[{name, phone, last_message_at}]` — private chats with them that are scanned too) |
 | `management_tasks` | Management tasks: text, `audience`, sender, group, original message, `due_date`, `done`. Found by the sync (groups and private chats), or added by hand via the "משימה מהנהלת טק סקול" checkbox on a new task / an approved "משימה אישית לי" voice log (`sender_name` = "הוספה ידנית" / "הקלטה קולית", no group or message) |
+| `school_locations` | One row per school name: `maps_url`, `lat`, `lng`, `label`. Set from the "📍 מיקום בית הספר" card on the Schools page (migration at the end of `supabase-setup.sql`, owner-only RLS) |
 | `whatsapp_sync_requests` | Manual "sync now" requests from the CRM, polled by the extension |
 
 Per-teacher WhatsApp sync config lives in `contacts.custom_fields`: `whatsappSync`, `whatsappGroupAliases`, and the cursors `whatsappLastMessageAt` / `whatsappLastGroupMessageAt` (written by the backend; `ContactDetail.jsx` re-reads `custom_fields` before saving so it can't clobber them).

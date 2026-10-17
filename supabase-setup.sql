@@ -423,3 +423,19 @@ CREATE POLICY "Owner full access" ON management_tasks    FOR ALL USING (auth.jwt
 -- כפי ש-Claude זיהה מההקלטה. ממלא מראש את כרטיס האישור; בלי העמודה ההקלטה עדיין נשמרת, בלי המילוי.
 -- ─────────────────────────────────────────────────────────────
 ALTER TABLE pending_voice_logs ADD COLUMN IF NOT EXISTS extra JSONB DEFAULT '{}';
+
+-- ─────────────────────────────────────────────────────────────
+-- מיקום בתי ספר (2026-10-17, הרץ פעם אחת ב-SQL Editor)
+-- שורה אחת לכל בית ספר (לפי השם כפי שמופיע בכרטיסי המורים). lat/lng = הקואורדינטות
+-- שחולצו מקישור Google Maps שהודבק בדף בית הספר; maps_url = הקישור המקורי.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS school_locations (
+  school TEXT PRIMARY KEY,
+  maps_url TEXT NOT NULL,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  label TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE school_locations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner full access" ON school_locations FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

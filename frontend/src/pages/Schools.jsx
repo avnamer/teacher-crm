@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL } from '../lib/teachers.js'
 import { fetchAdminTasks, setAdminTaskDone } from '../lib/adminTasks.js'
 import { interactionIcon, typeLabel } from '../lib/interactions.js'
+import { loadMondayDay, saveMondayDay, MONDAY_STATUSES, statusHasNote } from '../lib/mondayDays.js'
 import { loadSchoolLocation, saveSchoolLocation, clearSchoolLocation, mapsPinUrl } from '../lib/schoolLocations.js'
 import { allSchools, teacherSchools, teamsInSchool, studentCount, formatTeam } from '../lib/teams.js'
 import {
@@ -122,6 +123,7 @@ export default function Schools() {
       ) : (
         <>
           <TeachersSection school={school} teachers={teachers} />
+          <MondayDaySection key={`monday-${school}`} school={school} />
           <LocationSection key={`loc-${school}`} school={school} />
           <MainTasksSection teachers={teachers} taskColumns={base.taskColumns} />
           {!rowsReady ? (
@@ -203,6 +205,68 @@ function TeachersSection({ school, teachers }) {
           )
         })}
       </ul>
+    </Card>
+  )
+}
+
+// ─── יום מאנדיי: תאריך הביקור של בית הספר במשרדי מאנדיי + סטטוס ────────────────
+
+function MondayDaySection({ school }) {
+  const [form, setForm] = useState(undefined) // undefined = loading
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    loadMondayDay(school)
+      .then(row => { if (!cancelled) setForm({ day_date: row?.day_date || '', status: row?.status || 'pending', note: row?.note || '' }) })
+      .catch(err => { if (!cancelled) { setForm({ day_date: '', status: 'pending', note: '' }); setError(err.message) } })
+    return () => { cancelled = true }
+  }, [school])
+
+  async function save(next) {
+    setForm(next)
+    setSaved(false)
+    setError('')
+    setBusy(true)
+    try {
+      await saveMondayDay(school, next)
+      setSaved(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card title="🗓️ יום מאנדיי">
+      {form === undefined ? (
+        <p className="text-sm text-gray-400">טוען…</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="date" value={form.day_date || ''} disabled={busy}
+              onChange={e => save({ ...form, day_date: e.target.value })}
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+            <select value={form.status} disabled={busy}
+              onChange={e => save({ ...form, status: e.target.value })}
+              className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+              {MONDAY_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            {busy ? <span className="text-xs text-gray-400">שומר…</span> : saved && <span className="text-xs text-green-600">נשמר ✓</span>}
+          </div>
+          {statusHasNote(form.status) && (
+            <input value={form.note} onChange={e => { setForm({ ...form, note: e.target.value }); setSaved(false) }}
+              onBlur={() => save(form)}
+              onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+              placeholder={form.status === 'problem' ? 'מה הבעיה? (למשל: מייל איש קשר לא תקין)' : 'טקסט חופשי'}
+              className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+      )}
     </Card>
   )
 }

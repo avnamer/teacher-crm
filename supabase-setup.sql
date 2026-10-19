@@ -439,3 +439,18 @@ CREATE TABLE IF NOT EXISTS school_locations (
 );
 ALTER TABLE school_locations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Owner full access" ON school_locations FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- ימי מאנדיי של בתי ספר (2026-10-19, הרץ פעם אחת ב-SQL Editor)
+-- שורה אחת לכל בית ספר (לפי השם כפי שמופיע בכרטיסי המורים): תאריך ביקור במשרדי מאנדיי,
+-- וסטטוס: approved = אושרו, pending = טרם אושרו, problem = יש בעיה (note = הסיבה), text = טקסט חופשי (note).
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS school_monday_days (
+  school TEXT PRIMARY KEY,
+  day_date DATE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('approved','pending','problem','text')),
+  note TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE school_monday_days ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner full access" ON school_monday_days FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

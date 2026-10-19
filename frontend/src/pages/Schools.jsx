@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL } from '../lib/teachers.js'
 import { fetchAdminTasks, setAdminTaskDone } from '../lib/adminTasks.js'
 import { interactionIcon, typeLabel } from '../lib/interactions.js'
+import { loadMondayDay, MONDAY_STATUSES } from '../lib/mondayDays.js'
 import { loadSchoolLocation, saveSchoolLocation, clearSchoolLocation, mapsPinUrl } from '../lib/schoolLocations.js'
 import { allSchools, teacherSchools, teamsInSchool, studentCount, formatTeam } from '../lib/teams.js'
 import {
@@ -122,6 +123,7 @@ export default function Schools() {
       ) : (
         <>
           <TeachersSection school={school} teachers={teachers} />
+          <MondayDaySection key={`monday-${school}`} school={school} />
           <LocationSection key={`loc-${school}`} school={school} />
           <MainTasksSection teachers={teachers} taskColumns={base.taskColumns} />
           {!rowsReady ? (
@@ -203,6 +205,43 @@ function TeachersSection({ school, teachers }) {
           )
         })}
       </ul>
+    </Card>
+  )
+}
+
+// ─── יום מאנדיי: תאריך הביקור של בית הספר במשרדי מאנדיי + סטטוס ────────────────
+
+function MondayDaySection({ school }) {
+  const [row, setRow] = useState(undefined) // undefined = loading, null = none synced
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    loadMondayDay(school)
+      .then(r => { if (!cancelled) setRow(r) })
+      .catch(err => { if (!cancelled) { setRow(null); setError(err.message) } })
+    return () => { cancelled = true }
+  }, [school])
+
+  const statusLabel = MONDAY_STATUSES.find(s => s.value === row?.status)?.label
+  const statusColor = { approved: 'bg-green-100 text-green-800', pending: 'bg-amber-100 text-amber-800', problem: 'bg-red-100 text-red-800', text: 'bg-gray-100 text-gray-700' }[row?.status]
+
+  return (
+    <Card title="🗓️ יום מאנדיי" aside={<span className="text-xs text-gray-400">מסונכרן מהבורד — לקריאה בלבד</span>}>
+      {row === undefined ? (
+        <p className="text-sm text-gray-400">טוען…</p>
+      ) : !row ? (
+        <p className="text-sm text-gray-500">לא נמצא יום מאנדיי לבית הספר בבורד.</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="font-medium text-gray-800">{row.day_date ? new Date(row.day_date).toLocaleDateString('he-IL') : 'ללא תאריך'}</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>{statusLabel}</span>
+          </div>
+          {row.note && <p className="text-sm text-gray-600">{row.note}</p>}
+        </div>
+      )}
+      {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
     </Card>
   )
 }

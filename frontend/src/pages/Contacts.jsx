@@ -13,6 +13,8 @@ import SingleSendModal, { WhatsAppIcon } from '../components/SingleSendModal.jsx
 import { fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
 import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT_TASK_COLUMNS } from '../lib/teachers.js'
 import { interactionIcon, countsTowardRecency } from '../lib/interactions.js'
+import { loadMondayDays, mondayDayOf, formatMondayDate, formatArrivalStatus } from '../lib/mondayDays.js'
+import { teacherSchools } from '../lib/teams.js'
 import { groupMeetingsByGroupId, isScheduledMeeting } from '../lib/meetings.js'
 
 const DEFAULT_WIDTH = 150
@@ -27,6 +29,8 @@ const DEFAULT_COLUMNS = [
   { key: 'email', label: 'מייל', source: 'core', visible: false, locked: false, width: 200 },
   { key: 'class_name', label: 'כיתה', source: 'core', visible: false, locked: false, width: 90 },
   { key: 'birthday', label: 'יום הולדת', source: 'core', visible: false, locked: false, width: 130 },
+  { key: 'monday_day_date', label: 'תאריך יום מאנדיי', source: 'monday', visible: true, locked: false, width: 140 },
+  { key: 'monday_day_status', label: 'אישרו הגעה', source: 'monday', visible: true, locked: false, width: 160 },
   { key: 'last_contact_journal', label: 'יומן קשר אחרון', source: 'journal', visible: true, locked: false, width: 220 },
   ...DEFAULT_TASK_COLUMNS,
 ]
@@ -72,7 +76,11 @@ function firstSentence(text) {
   return match ? match[0].trim() : trimmed
 }
 
-function formatDisplay(contact, col, journalMap, lastNonJournalMap) {
+function formatDisplay(contact, col, journalMap, lastNonJournalMap, mondayDays) {
+  if (col.source === 'monday') {
+    const row = mondayDayOf(contact, mondayDays || {}, teacherSchools)
+    return (col.key === 'monday_day_date' ? formatMondayDate(row) : formatArrivalStatus(row)) || '-'
+  }
   if (col.source === 'task') return isTaskDone(contact, col) ? '✓' : ''
   if (col.source === 'journal') {
     const entry = journalMap?.[contact.id]?.[col.key]
@@ -124,6 +132,7 @@ export default function Contacts() {
   const [templates, setTemplates] = useState([])
   const [editingCell, setEditingCell] = useState(null) // { contactId, colKey } | null
   const [resizing, setResizing] = useState(null) // { key, startX, startWidth } | null
+  const [mondayDays, setMondayDays] = useState({}) // { [school]: school_monday_days row } — read-only here, edited on the Schools page
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
   const [lastContactMap, setLastContactMap] = useState({}) // { [contactId]: latest created_at across all interactions }
   const [lastNonJournalMap, setLastNonJournalMap] = useState({}) // { [contactId]: latest {content, type, created_at} among non-journal interactions }
@@ -144,6 +153,7 @@ export default function Contacts() {
   useEffect(() => {
     loadContacts()
     loadColumns()
+    loadMondayDays().then(setMondayDays).catch(err => console.error('Error loading monday days:', err))
   }, [])
 
   useEffect(() => {
@@ -767,6 +777,7 @@ export default function Contacts() {
                             col={col}
                             journalMap={journalMap}
                             lastNonJournalMap={lastNonJournalMap}
+                            mondayDays={mondayDays}
                             isEditing={editingCell?.contactId === contact.id && editingCell?.colKey === col.key}
                             onStartEdit={() => setEditingCell({ contactId: contact.id, colKey: col.key })}
                             onCancel={() => setEditingCell(null)}
@@ -1273,7 +1284,7 @@ function DuplicateMeetingsBanner({ clusters, expanded, onToggle, onResolved }) {
 }
 
 // ─── Editable table cell ──────────────────────────────────────────
-function EditableCell({ contact, col, journalMap, lastNonJournalMap, isEditing, onStartEdit, onCancel, onSave }) {
+function EditableCell({ contact, col, journalMap, lastNonJournalMap, mondayDays, isEditing, onStartEdit, onCancel, onSave }) {
   const editType = getEditType(col)
   const [savingTask, setSavingTask] = useState(false)
   // Journal cells always start blank — writing in them adds a new dated entry, it never edits the last one.
@@ -1284,6 +1295,11 @@ function EditableCell({ contact, col, journalMap, lastNonJournalMap, isEditing, 
   // branch below returns early and never uses `value`/`setValue`, but they still need to be
   // declared before any conditional return, same reasoning as `savingTask` above.
   useEffect(() => { setValue(rawValue) }, [isEditing])
+
+  if (col.source === 'monday') {
+    const display = formatDisplay(contact, col, journalMap, lastNonJournalMap, mondayDays)
+    return <span className="block truncate" title={display === '-' ? 'נקבע בעמוד בית הספר' : display}>{display}</span>
+  }
 
   if (editType === 'task') {
     const done = isTaskDone(contact, col)

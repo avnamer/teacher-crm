@@ -104,6 +104,7 @@ applied. Add new changes at the end; don't edit earlier statements.
 | `management_settings` | Single row: `task_givers` (WhatsApp names of Benny/Mika), `my_names`, `private_chats` (`[{name, phone, last_message_at}]` — private chats with them that are scanned too) |
 | `management_tasks` | Management tasks: text, `audience`, sender, group, original message, `due_date`, `done`. Found by the sync (groups and private chats), or added by hand via the "משימה מהנהלת טק סקול" checkbox on a new task / an approved "משימה אישית לי" voice log (`sender_name` = "הוספה ידנית" / "הקלטה קולית", no group or message) |
 | `school_locations` | One row per school name: `maps_url`, `lat`, `lng`, `label`. Set from the "📍 מיקום בית הספר" card on the Schools page (migration at the end of `supabase-setup.sql`, owner-only RLS) |
+| `school_monday_days` | One row per school name: `day_date`, `status` (`approved`/`pending`/`problem`/`text`), `note`. **One-way sync from the monday Mentor Hub board** — written only by `scripts/sync-monday-days.mjs` (service key); RLS is select-only, the app just displays it (Schools page card + two read-only teacher columns in Contacts) |
 | `whatsapp_sync_requests` | Manual "sync now" requests from the CRM, polled by the extension |
 
 Per-teacher WhatsApp sync config lives in `contacts.custom_fields`: `whatsappSync`, `whatsappGroupAliases`, and the cursors `whatsappLastMessageAt` / `whatsappLastGroupMessageAt` (written by the backend; `ContactDetail.jsx` re-reads `custom_fields` before saving so it can't clobber them).

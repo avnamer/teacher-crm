@@ -1,8 +1,9 @@
 import { supabase } from './supabase.js'
 
-// A school's "monday day" (the school's visit to monday's office): a date plus a status picked on
-// the Schools page. One row per school name in school_monday_days (see supabase-setup.sql).
-// The Contacts table shows it read-only as two columns for every teacher of that school.
+// A school's "monday day" (the school's visit to monday's office): a date plus a status. One row per
+// school name in school_monday_days (see supabase-setup.sql). One-way: the monday Mentor Hub board is the
+// source, scripts/sync-monday-days.mjs writes it; the app only reads (Schools page card + two read-only
+// columns in the Contacts table). The table's RLS policy is select-only, so the app cannot edit it.
 
 export const MONDAY_STATUSES = [
   { value: 'approved', label: 'אושרו' },
@@ -10,9 +11,6 @@ export const MONDAY_STATUSES = [
   { value: 'problem', label: 'יש בעיה' },
   { value: 'text', label: 'טקסט חופשי' },
 ]
-
-/** Statuses that come with a free-text line under the row. */
-export const statusHasNote = status => status === 'problem' || status === 'text'
 
 const isMissingTable = error => error?.code === '42P01' || error?.code === 'PGRST205'
 
@@ -35,19 +33,6 @@ export async function loadMondayDays() {
     throw error
   }
   return Object.fromEntries((data || []).map(r => [r.school, r]))
-}
-
-export async function saveMondayDay(school, { day_date, status, note }) {
-  const row = {
-    school,
-    day_date: day_date || null,
-    status,
-    note: statusHasNote(status) ? (note || '').trim() || null : null,
-    updated_at: new Date().toISOString(),
-  }
-  const { error } = await supabase.from('school_monday_days').upsert(row)
-  if (error) throw wrapError(error)
-  return row
 }
 
 /** The monday-day row for a teacher: their primary school's, else the first of their schools that has one. */

@@ -442,7 +442,7 @@ CREATE POLICY "Owner full access" ON school_locations FOR ALL USING (auth.jwt() 
 
 -- ─────────────────────────────────────────────────────────────
 -- ימי מאנדיי של בתי ספר (2026-10-19, הרץ פעם אחת ב-SQL Editor)
--- שורה אחת לכל בית ספר (לפי השם כפי שמופיע בכרטיסי המורים): תאריך ביקור במשרדי מאנדיי,
+-- סנכרון חד-כיווני מבורד Mentor Hub. שורה אחת לכל בית ספר (לפי השם כפי שמופיע בכרטיסי המורים): תאריך ביקור במשרדי מאנדיי,
 -- וסטטוס: approved = אושרו, pending = טרם אושרו, problem = יש בעיה (note = הסיבה), text = טקסט חופשי (note).
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS school_monday_days (
@@ -453,4 +453,5 @@ CREATE TABLE IF NOT EXISTS school_monday_days (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE school_monday_days ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Owner full access" ON school_monday_days FOR ALL USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com') WITH CHECK (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+-- קריאה בלבד מהאפליקציה; הכתיבה רק מסקריפט הסנכרון (scripts/sync-monday-days.mjs, service key)
+CREATE POLICY "Owner read only" ON school_monday_days FOR SELECT USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

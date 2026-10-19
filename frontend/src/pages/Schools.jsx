@@ -253,6 +253,7 @@ function LocationSection({ school }) {
   const [error, setError] = useState('')
   const [link, setLink] = useState('')
   const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -269,11 +270,18 @@ function LocationSection({ school }) {
     try {
       setLoc(await saveSchoolLocation(school, link.trim()))
       setLink('')
+      setEditing(false)
     } catch (err) {
       setError(err.message)
     } finally {
       setBusy(false)
     }
+  }
+
+  function cancelEdit() {
+    setEditing(false)
+    setLink('')
+    setError('')
   }
 
   async function remove() {
@@ -282,6 +290,7 @@ function LocationSection({ school }) {
     try {
       await clearSchoolLocation(school)
       setLoc(null)
+      setEditing(false)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -295,24 +304,40 @@ function LocationSection({ school }) {
         <p className="text-sm text-gray-400">טוען…</p>
       ) : (
         <div className="space-y-3">
-          {loc && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              <span className="text-gray-800 font-medium">{loc.label || 'מיקום שמור'}</span>
-              <span dir="ltr" className="text-gray-500">{loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}</span>
-              <a href={mapsPinUrl(loc)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">פתח במפות</a>
-              <button onClick={remove} disabled={busy} className="text-red-600 hover:underline mr-auto">מחק</button>
-            </div>
-          )}
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input value={link} onChange={e => setLink(e.target.value)} dir="ltr"
-              onKeyDown={e => e.key === 'Enter' && save()}
-              placeholder="הדבק קישור שיתוף מ-Google Maps (https://maps.app.goo.gl/…)"
-              className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-            <button onClick={save} disabled={busy || !link.trim()}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">
-              {busy ? 'שומר…' : loc ? 'עדכן מיקום' : 'שמור מיקום'}
-            </button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            {loc ? (
+              <>
+                <span className="text-gray-800 font-medium">{loc.label || 'מיקום שמור'}</span>
+                <span dir="ltr" className="text-gray-500">{loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}</span>
+                <a href={mapsPinUrl(loc)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">פתח במפות</a>
+              </>
+            ) : (
+              <span className="text-gray-500">לא הוגדר מיקום</span>
+            )}
+            {!editing && (
+              <button onClick={() => setEditing(true)} className="text-blue-600 hover:underline mr-auto">לעריכה</button>
+            )}
           </div>
+          {editing && (
+            <>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input value={link} onChange={e => setLink(e.target.value)} dir="ltr" autoFocus
+                  onKeyDown={e => e.key === 'Enter' && save()}
+                  placeholder="הדבק קישור שיתוף מ-Google Maps (https://maps.app.goo.gl/…)"
+                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                <button onClick={save} disabled={busy || !link.trim()}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">
+                  {busy ? 'שומר…' : loc ? 'עדכן מיקום' : 'שמור מיקום'}
+                </button>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <button onClick={cancelEdit} disabled={busy} className="text-gray-600 hover:underline">ביטול</button>
+                {loc && (
+                  <button onClick={remove} disabled={busy} className="text-red-600 hover:underline mr-auto">מחק מיקום</button>
+                )}
+              </div>
+            </>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       )}

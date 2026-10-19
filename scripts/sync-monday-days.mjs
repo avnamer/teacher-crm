@@ -32,14 +32,22 @@ const res = await fetch(`${url}?select=school,day_date,status,note`, { headers }
 if (!res.ok) { console.error('read failed:', res.status, await res.text()); process.exit(1) }
 const current = Object.fromEntries((await res.json()).map(r => [r.school, r]))
 
+const LABEL = { approved: 'אושרו', pending: 'טרם אושרו', problem: 'יש בעיה', text: 'טקסט חופשי' }
+const desc = r => `${LABEL[r.status]}${r.note ? ` (${r.note})` : ''}`
 const same = (a, b) => a.day_date === b.day_date && a.status === b.status && (a.note || null) === (b.note || null)
 const added = rows.filter(r => !current[r.school])
 const changed = rows.filter(r => current[r.school] && !same(current[r.school], r))
 const missing = Object.keys(current).filter(s => !rows.some(r => r.school === s))
 console.log(`חדשים: ${added.length}, השתנו: ${changed.length}, ללא שינוי: ${rows.length - added.length - changed.length}`)
-for (const r of added) console.log('  + ', r.school, r.day_date, r.status, r.note || '')
-for (const r of changed) console.log('  ~ ', r.school, JSON.stringify(current[r.school]), '→', JSON.stringify(r))
-for (const s of missing) console.log('  ? לא בבורד יותר (לא נמחק):', s)
+for (const r of added) console.log('  + חדש:', r.school, '|', r.day_date, '|', desc(r))
+for (const r of changed) {
+  const old = current[r.school]
+  const parts = []
+  if (old.status !== r.status || (old.note || null) !== (r.note || null)) parts.push(`אישור הגעה: ${desc(old)} → ${desc(r)}`)
+  if (old.day_date !== r.day_date) parts.push(`תאריך: ${old.day_date} → ${r.day_date}`)
+  console.log('  ~', r.school, '|', parts.join(' | '))
+}
+for (const s of missing) console.log('  (הערה) בית ספר שאינו בבורד כרגע, לא נמחק:', s)
 
 if (flag !== '--apply') { console.log('dry run — הוסף --apply כדי לכתוב'); process.exit(0) }
 const todo = [...added, ...changed].map(r => ({ ...r, updated_at: new Date().toISOString() }))

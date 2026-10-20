@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { buildChatUrl, messageForContact, phoneProblem } from '../lib/whatsapp.js'
+import { buildChatUrl, messageForContact, phoneProblem, useTemplateVariables } from '../lib/whatsapp.js'
 
 // Click-to-chat send queue.
 //
@@ -23,6 +23,7 @@ const STATUS = {
 // sentVia: 'bulk' (group send — gets the distinct bulk icon in the history) or
 // 'single' (one teacher from the dashboard — shown as a plain "הודעה").
 export default function SendQueueModal({ template, contacts, onClose, sentVia = 'bulk' }) {
+  const { ready: varsReady } = useTemplateVariables()
   // Contacts with an unusable phone can't be messaged at all, so they start in a
   // terminal 'invalid' state rather than blocking the queue when reached.
   const [statuses, setStatuses] = useState(() => {
@@ -37,7 +38,7 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
     const map = {}
     for (const c of contacts) map[c.id] = messageForContact(template, c)
     return map
-  }, [contacts, template])
+  }, [contacts, template, varsReady])
 
   const counts = useMemo(() => {
     const c = { sent: 0, skipped: 0, invalid: 0, remaining: 0 }

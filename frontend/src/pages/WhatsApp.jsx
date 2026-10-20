@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { backendFetch } from '../lib/api.js'
 import ContactPickerModal from '../components/ContactPickerModal.jsx'
 import SendQueueModal from '../components/SendQueueModal.jsx'
-import { messageForContact, phoneProblem, MANUAL_DRIVER, fetchDriver } from '../lib/whatsapp.js'
+import { messageForContact, phoneProblem, MANUAL_DRIVER, fetchDriver, useTemplateVariables } from '../lib/whatsapp.js'
 import {
   isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL,
 } from '../lib/teachers.js'
@@ -19,6 +19,7 @@ const TEMPLATE_VARIABLES = [
 ]
 
 export default function WhatsApp() {
+  const { variables: columnVars } = useTemplateVariables()
   const [templates, setTemplates] = useState([])
   const [showEditor, setShowEditor] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState(null)
@@ -167,7 +168,7 @@ export default function WhatsApp() {
       <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
         <h3 className="font-medium text-gray-700 mb-2">משתנים זמינים בתבניות:</h3>
         <div className="flex flex-wrap gap-2 text-sm">
-          {TEMPLATE_VARIABLES.map(v => (
+          {[...TEMPLATE_VARIABLES, ...columnVars].map(v => (
             <code key={v.token} className="bg-white px-2 py-1 rounded border text-gray-600">
               {v.label}: {v.token}
             </code>
@@ -216,6 +217,7 @@ export default function WhatsApp() {
 }
 
 function BulkSendModal({ templates, driver = MANUAL_DRIVER, onClose, initialContactIds = null, presetContactOverride = null }) {
+  useTemplateVariables() // loads column values so previews resolve {{col:...}}
   const [step, setStep] = useState(1)
   const [showQueue, setShowQueue] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0] || null)
@@ -699,6 +701,7 @@ function TemplateEditor({ template, onClose, onSaved }) {
     media_url: template?.media_url || '',
   })
   const [saving, setSaving] = useState(false)
+  const { variables: columnVars } = useTemplateVariables()
   // The body a clicked variable goes into: whichever textarea was focused last.
   const [activeField, setActiveField] = useState('body_male')
   const bodyRefs = { body_male: useRef(null), body_female: useRef(null) }
@@ -765,7 +768,7 @@ function TemplateEditor({ template, onClose, onSaved }) {
               לחצו על משתנה כדי להוסיף אותו במקום הסמן, או גררו אותו לתוך ההודעה
             </p>
             <div className="flex flex-wrap gap-2">
-              {TEMPLATE_VARIABLES.map(v => (
+              {[...TEMPLATE_VARIABLES, ...columnVars].map(v => (
                 // A span, not a <button>: Firefox won't start a native drag from a button.
                 <span
                   key={v.token}

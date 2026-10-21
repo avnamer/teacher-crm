@@ -16,7 +16,7 @@
 // "still seeing the old error" report can be checked in 2 seconds instead of
 // guessing whether the extension+tab reload actually picked up the latest
 // code (this has been the actual cause more than once during testing).
-const CONTENT_JS_BUILD = '2026-10-12-34'
+const CONTENT_JS_BUILD = '2026-10-21-guided-send'
 console.log(`%c[whatsapp-sync] content.js loaded — build ${CONTENT_JS_BUILD}`, 'color: #2563eb; font-weight: bold')
 
 // Confirmed live (2026-09-29): WhatsApp's virtualized list only responds to
@@ -874,10 +874,60 @@ async function runGroupSync(teachers, groups) {
   }
 }
 
+// ─── Guided send: notice that the human pressed Enter ──────────────────────
+// Read-only. background.js opened the chat with the text already in the composer; we
+// poll the visible rows until an outgoing message with that text, stamped no earlier
+// than the moment we started watching, shows up — then tell background it was sent.
+let sendWatchTimer = null
+
+function normalizeForCompare(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim()
+}
+
+function startSendWatch(expectedText, sinceMs) {
+  stopSendWatch()
+  const expected = normalizeForCompare(expectedText)
+  // data-pre-plain-text has minute resolution, so allow a minute of slack.
+  const earliest = sinceMs - 60 * 1000
+  sendWatchTimer = setInterval(() => {
+    try {
+      const rows = queryAllFirst(WA_SELECTORS.messageRow)
+      const pane = queryFirst(WA_SELECTORS.messagePane)
+      for (const row of rows.slice(-8)) {
+        const msg = extractMessage(row, pane, null)
+        if (!msg || msg.sender !== 'me' || !msg.text) continue
+        if (new Date(msg.timestamp).getTime() < earliest) continue
+        if (normalizeForCompare(msg.text) === expected) {
+          stopSendWatch()
+          chrome.runtime.sendMessage({ action: 'guidedSendDetected' })
+          return
+        }
+      }
+    } catch (err) {
+      console.warn('[whatsapp-sync] send watch:', err.message)
+    }
+  }, 1500)
+}
+
+function stopSendWatch() {
+  if (sendWatchTimer) clearInterval(sendWatchTimer)
+  sendWatchTimer = null
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === 'ping') {
     sendResponse({ build: CONTENT_JS_BUILD })
     return false // synchronous response
+  }
+  if (message.action === 'watchSend') {
+    startSendWatch(message.text, message.since)
+    sendResponse({ ok: true })
+    return false
+  }
+  if (message.action === 'stopWatchSend') {
+    stopSendWatch()
+    sendResponse({ ok: true })
+    return false
   }
   if (message.action === 'readDM') {
     readCurrentDM(message.contactId, message.teacherName, message.lastMessageAt, message.phone)

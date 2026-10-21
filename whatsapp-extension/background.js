@@ -376,6 +376,91 @@ async function runSync() {
   }
 }
 
+// ─── Guided send (CRM → WhatsApp Web, human presses Enter) ────────────────
+// The CRM (via crm-bridge.js) hands over [{ id, phone, text }]. For each one we open
+// WhatsApp's own /send?phone=&text= link in the existing WhatsApp tab, so the chat
+// opens with the message already in the composer, then wait for content.js to see the
+// message appear as sent. We never type into the composer and never press send.
+let guided = null // { crmTabId, items, index, cancelled, waiting: {resolve} | null, keepAlive }
+
+function emitToCrm(event) {
+  if (!guided) return
+  chrome.tabs.sendMessage(guided.crmTabId, { action: 'guidedSendEvent', event }).catch(() => {})
+}
+
+function endGuided(event) {
+  if (!guided) return
+  emitToCrm(event)
+  clearInterval(guided.keepAlive)
+  guided = null
+}
+
+async function runGuidedSend() {
+  const run = guided
+  try {
+    const tab = await getWhatsAppTab()
+    if (!tab) return endGuided({ type: 'finished', error: 'WhatsApp Web לא פתוח — פתח לשונית web.whatsapp.com ונסה שוב' })
+
+    for (run.index = 0; run.index < run.items.length; run.index++) {
+      if (run.cancelled) break
+      const item = run.items[run.index]
+      const phone = normalizePhoneForSearch(item.phone)
+      if (!phone) { emitToCrm({ type: 'item-error', id: item.id, reason: 'מספר טלפון לא תקין' }); continue }
+
+      const url = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(item.text)}`
+      await chrome.tabs.update(tab.id, { url })
+      await waitForTabLoad(tab.id)
+      await new Promise(r => setTimeout(r, 4000)) // let the WhatsApp SPA mount the chat
+
+      const outcome = await new Promise(resolve => {
+        run.waiting = { resolve }
+        sendToContentScript(tab.id, { action: 'watchSend', text: item.text, since: Date.now() })
+          .catch(err => resolve({ status: 'error', reason: err.message }))
+        emitToCrm({ type: 'opened', id: item.id })
+      })
+      run.waiting = null
+      sendToContentScript(tab.id, { action: 'stopWatchSend' }).catch(() => {})
+
+      if (outcome.status === 'sent') emitToCrm({ type: 'sent', id: item.id })
+      else if (outcome.status === 'skipped') emitToCrm({ type: 'skipped', id: item.id })
+      else if (outcome.status === 'error') emitToCrm({ type: 'item-error', id: item.id, reason: outcome.reason })
+      if (run.cancelled) break
+      await new Promise(r => setTimeout(r, 1500))
+    }
+    endGuided({ type: 'finished' })
+  } catch (err) {
+    console.error('[guided-send] failed:', err)
+    endGuided({ type: 'finished', error: err.message })
+  }
+}
+
+function handleGuidedSend(message, sender) {
+  if (message.type === 'start') {
+    if (guided) throw new Error('שליחה מונחית כבר רצה')
+    const items = (message.items || [])
+      .filter(i => i && i.id && typeof i.text === 'string' && i.text.trim())
+      .map(i => ({ id: i.id, phone: i.phone, text: i.text }))
+    if (items.length === 0) throw new Error('אין הודעות לשליחה')
+    guided = {
+      crmTabId: sender.tab.id,
+      items,
+      index: 0,
+      cancelled: false,
+      waiting: null,
+      // Keeps the service worker alive while we wait minutes for a human to press Enter.
+      keepAlive: setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000),
+    }
+    runGuidedSend()
+    return
+  }
+  if (!guided) return
+  if (message.type === 'skip') guided.waiting?.resolve({ status: 'skipped' })
+  if (message.type === 'cancel') {
+    guided.cancelled = true
+    guided.waiting?.resolve({ status: 'skipped' })
+  }
+}
+
 chrome.alarms.onAlarm.addListener(async alarm => {
   try {
     if (alarm.name === HEARTBEAT_ALARM) {
@@ -401,6 +486,14 @@ chrome.alarms.onAlarm.addListener(async alarm => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action } = message
 
+  if (action === 'guidedSend') {
+    try { handleGuidedSend(message, sender); sendResponse({ ok: true }) } catch (err) { sendResponse({ error: err.message }) }
+    return false
+  }
+  if (action === 'guidedSendDetected') {
+    guided?.waiting?.resolve({ status: 'sent' })
+    return false
+  }
   if (action === 'manualSync') {
     runSync().then(sendResponse)
     return true

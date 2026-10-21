@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
   "name": "סנכרון וואטסאפ ל-Teacher CRM",
-  "version": "1.0.33",
-  "version_name": "2026-10-12-34",
-  "description": "קורא הודעות וואטסאפ ממורים ומקבוצות נבחרות ומתעד אותן ב-Teacher CRM. קוראת בלבד את מה שמוצג ב-WhatsApp Web — לא שולחת הודעות ולא משתמשת בשום ספרייה לא-רשמית.",
+  "version": "1.1.0",
+  "version_name": "2026-10-21-guided-send",
+  "description": "קורא הודעות וואטסאפ ממורים ומקבוצות נבחרות ומתעד אותן ב-Teacher CRM. קוראת את מה שמוצג ב-WhatsApp Web, ובשליחה מונחית רק פותחת את הצ'אט עם ההודעה מוכנה — הלחיצה על שליחה תמיד ידנית. לא משתמשת בשום ספרייה לא-רשמית.",
   "permissions": ["storage", "alarms", "tabs", "debugger", "tabCapture", "offscreen"],
   "host_permissions": [
+    "http://localhost:5173/*",
+    "https://comforting-pegasus-780af0.netlify.app/*",
     "https://web.whatsapp.com/*",
     "http://localhost:3001/*",
     "https://teacher-crm-backend.onrender.com/*"
@@ -18,6 +20,11 @@
     {
       "matches": ["https://web.whatsapp.com/*"],
       "js": ["selectors.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost:5173/*", "https://comforting-pegasus-780af0.netlify.app/*"],
+      "js": ["crm-bridge.js"],
       "run_at": "document_idle"
     }
   ],

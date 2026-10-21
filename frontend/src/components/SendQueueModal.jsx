@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { buildChatUrl, messageForContact, phoneProblem, useTemplateVariables } from '../lib/whatsapp.js'
+import { useGuidedSend } from '../lib/guidedSend.js'
 
 // Click-to-chat send queue.
 //
@@ -33,6 +34,7 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
   })
   const [index, setIndex] = useState(() => contacts.findIndex(c => !phoneProblem(c)))
   const [logError, setLogError] = useState(null)
+  const [guidedActive, setGuidedActive] = useState(false)
 
   const messages = useMemo(() => {
     const map = {}
@@ -87,7 +89,10 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
     const contact = current
     setStatus(contact.id, 'sent')
     advance(index)
+    await logSent(contact)
+  }
 
+  async function logSent(contact) {
     const { error } = await supabase.from('interactions').insert({
       contact_id: contact.id,
       // A send that actually reached several teachers is tagged 'mailing_list' (plane
@@ -98,7 +103,7 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
       content: messages[contact.id],
       metadata: {
         channel: 'whatsapp',
-        driver: 'manual',
+        driver: guidedActive ? 'extension_guided' : 'manual',
         template_id: template?.id || null,
         template_name: template?.name || null,
         sent_via: sentVia,
@@ -108,6 +113,40 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
     // A failed log doesn't un-send the message, so don't roll the row back —
     // just surface it, because the dashboard's recency colour will be stale.
     if (error) setLogError(`ההודעה נשלחה אך לא נרשמה ביומן (${contact.name}): ${error.message}`)
+  }
+
+  // ─── Guided send: the extension opens each chat, the human presses Enter ───
+  function handleGuidedEvent(ev) {
+    const contact = contacts.find(c => c.id === ev.id)
+    if (ev.type === 'opened' && contact) {
+      setStatus(ev.id, 'opened')
+      setIndex(contacts.findIndex(c => c.id === ev.id))
+    } else if (ev.type === 'sent' && contact) {
+      setStatus(ev.id, 'sent')
+      logSent(contact)
+    } else if (ev.type === 'skipped' && contact) {
+      setStatus(ev.id, 'skipped')
+    } else if (ev.type === 'item-error' && contact) {
+      setStatus(ev.id, 'skipped')
+      setLogError(`${contact.name}: ${ev.reason}`)
+    } else if (ev.type === 'finished') {
+      setGuidedActive(false)
+      if (ev.error) setLogError(ev.error)
+    } else if (ev.type === 'error') {
+      setGuidedActive(false)
+      setLogError(`התוסף: ${ev.reason}`)
+    }
+  }
+  const guided = useGuidedSend(handleGuidedEvent)
+
+  function handleGuidedStart() {
+    const items = contacts
+      .filter(c => !phoneProblem(c) && (statuses[c.id] === 'pending' || statuses[c.id] === 'opened'))
+      .map(c => ({ id: c.id, phone: c.phone, text: messages[c.id] }))
+    if (items.length === 0) return
+    setLogError(null)
+    setGuidedActive(true)
+    guided.start(items)
   }
 
   function handleSkip() {
@@ -163,6 +202,25 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
               </p>
             </div>
           ) : current ? (
+            <>
+            {guided.available && !guidedActive && (
+              <button
+                onClick={handleGuidedStart}
+                className="w-full px-4 py-3 bg-green-700 text-white rounded-xl font-medium hover:bg-green-800"
+              >
+                ▶ שליחה מונחית דרך התוסף — הצ'אטים נפתחים לבד, אתה רק לוחץ Enter
+              </button>
+            )}
+            {guidedActive && (
+              <div className="flex items-center gap-3 bg-green-50 border border-green-300 rounded-xl p-3 text-sm text-green-800">
+                <span className="flex-1">
+                  שליחה מונחית פעילה: לחץ Enter בווטסאפ ושם המערכת תזהה את השליחה ותעבור למורה הבא.
+                </span>
+                <button onClick={guided.cancel} className="px-3 py-1.5 border border-green-400 rounded-lg hover:bg-white">
+                  עצור
+                </button>
+              </div>
+            )}
             <div className="border-2 border-green-500 rounded-xl p-4 bg-green-50/40">
               <div className="flex items-center justify-between mb-3">
                 <div>
@@ -178,7 +236,16 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
                 {messages[current.id]}
               </div>
 
-              {statuses[current.id] === 'opened' ? (
+              {guidedActive ? (
+                <div className="flex items-center gap-2">
+                  <p className="flex-1 text-xs text-gray-600">
+                    {statuses[current.id] === 'opened' ? "הצ'אט פתוח בווטסאפ עם ההודעה מוכנה — לחץ Enter שם." : "ממתין לפתיחת הצ'אט…"}
+                  </p>
+                  <button onClick={guided.skip} className="px-4 py-2.5 border rounded-lg text-sm hover:bg-white">
+                    דלג
+                  </button>
+                </div>
+              ) : statuses[current.id] === 'opened' ? (
                 <div className="space-y-2">
                   <p className="text-xs text-gray-600">
                     ההודעה נפתחה ב-WhatsApp עם הטקסט מוכן. לחץ Enter שם כדי לשלוח, ואז אשר כאן.
@@ -212,6 +279,7 @@ export default function SendQueueModal({ template, contacts, onClose, sentVia = 
                 </div>
               )}
             </div>
+            </>
           ) : null}
 
           {/* Full list */}

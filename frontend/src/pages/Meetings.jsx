@@ -354,6 +354,7 @@ export default function Meetings() {
   const [openMergeKey, setOpenMergeKey] = useState(null)
   const [adminMeetings, setAdminMeetings] = useState([])
   const [openAdmin, setOpenAdmin] = useState(false)
+  const [openOffice, setOpenOffice] = useState(true)
   const [editingAdminId, setEditingAdminId] = useState(null)
   // '' = all months, otherwise 'YYYY-MM' — filters the lists below and drives the trip report.
   const [month, setMonth] = useState('')
@@ -536,6 +537,9 @@ export default function Meetings() {
   const inMonth = date => !month || monthKey(date) === month
   const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date)))
   const visibleUpcoming = upcoming.filter(g => inMonth(g.date))
+  const visibleOffice = completedGroups
+    .filter(g => g.atOffice && inMonth(g.date))
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
   const visibleAdmin = adminMeetings
     .filter(r => inMonth(r.created_at))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -689,6 +693,36 @@ export default function Meetings() {
                               className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">✏️</button>
                           </div>
                         </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {visibleOffice.length > 0 && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 overflow-hidden">
+              <button onClick={() => setOpenOffice(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-right">
+                <span className="font-medium text-gray-800">🏢 פגישות במשרדי מאנדיי</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white text-gray-600">
+                    {visibleOffice.length} פגישות
+                  </span>
+                  <span className="text-gray-400 text-sm">{openOffice ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {openOffice && (
+                <div className="border-t border-indigo-200 divide-y divide-indigo-100 bg-white">
+                  {visibleOffice.map(g => (
+                    <div key={g.groupId} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-blue-600">{g.contactNames.join(', ')}</span>
+                        <span className="text-xs text-gray-500">{new Date(g.date).toLocaleDateString('he-IL')}</span>
+                      </div>
+                      {firstRowContent(g.rowIds, meetings) && (
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{firstRowContent(g.rowIds, meetings)}</p>
                       )}
                     </div>
                   ))}

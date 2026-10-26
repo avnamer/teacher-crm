@@ -968,16 +968,16 @@ export default function Contacts() {
 
 // ─── Contact-recency stats ─────────────────────────────────────────
 const STAT_TILES = [
-  { key: 'green', label: 'יצרתי קשר ב-7 הימים האחרונים', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', dot: 'bg-green-500' },
-  { key: 'orange', label: 'לא דיברתי 8–14 ימים', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', dot: 'bg-orange-400' },
-  { key: 'red', label: 'לא דיברתי מעל שבועיים / אין קשר מתועד', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' },
+  { key: 'green', label: 'התכתבנו ב-7 הימים האחרונים', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', dot: 'bg-green-500' },
+  { key: 'orange', label: 'התכתבנו לפני 8–14 ימים', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', dot: 'bg-orange-400' },
+  { key: 'red', label: 'לא התכתבנו מעל שבועיים / אין תיעוד', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' },
 ]
 
 // Same buckets, but counting only real conversations: phone calls and meetings held in person.
 const LIVE_STAT_TILES = [
-  { ...STAT_TILES[0], label: 'שוחחתי / נפגשתי ב-7 הימים האחרונים' },
-  { ...STAT_TILES[1], label: 'לא שוחחתי / נפגשתי 8–14 ימים' },
-  { ...STAT_TILES[2], label: 'לא שוחחתי / נפגשתי מעל שבועיים / אין תיעוד' },
+  { ...STAT_TILES[0], label: 'שוחחנו ב-7 הימים האחרונים' },
+  { ...STAT_TILES[1], label: 'שוחחנו לפני 8–14 ימים' },
+  { ...STAT_TILES[2], label: 'לא שוחחנו מעל שבועיים / אין תיעוד' },
 ]
 
 function ContactStats({ tiles = STAT_TILES, buckets, expandedBucket, onToggleBucket }) {

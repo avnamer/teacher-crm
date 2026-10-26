@@ -719,7 +719,9 @@ export default function Meetings() {
                     <div key={g.groupId} className="px-4 py-3">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-sm font-medium text-blue-600">{g.contactNames.join(', ')}</span>
-                        <span className="text-xs text-gray-500">{new Date(g.date).toLocaleDateString('he-IL')}</span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(g.date).toLocaleDateString('he-IL')} · לפני {daysSince(g.date)} ימים
+                        </span>
                       </div>
                       {firstRowContent(g.rowIds, meetings) && (
                         <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{firstRowContent(g.rowIds, meetings)}</p>

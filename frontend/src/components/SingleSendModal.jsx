@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import SendQueueModal from './SendQueueModal.jsx'
-import { messageForContact, phoneProblem } from '../lib/whatsapp.js'
+import { messageForContact, phoneProblem, useTemplateVariables } from '../lib/whatsapp.js'
 
 // One-teacher WhatsApp send, opened from the dashboard row icon.
 //
@@ -26,6 +26,7 @@ export default function SingleSendModal({ contact, templates, onClose, onSent })
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0] || null)
   const [started, setStarted] = useState(false)
   const problem = phoneProblem(contact)
+  useTemplateVariables() // loads column values so the preview resolves {{col:...}}
 
   if (started) {
     return (

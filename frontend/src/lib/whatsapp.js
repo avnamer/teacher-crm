@@ -14,7 +14,90 @@
 // we fall back to 'manual' rather than failing — an offline backend must never be
 // the reason a message can't go out.
 
+import { useState, useEffect } from 'react'
+import { supabase } from './supabase.js'
+import { loadMondayDays, mondayDayOf, formatMondayDate, formatArrivalStatus } from './mondayDays.js'
+import { teacherSchools } from './teams.js'
+import { isTaskDone } from './teachers.js'
+
 const DEFAULT_COUNTRY_CODE = '972' // Israel
+
+// ─── Variables from the dashboard's active columns ────────────────
+//
+// Besides the fixed {{name}}-style placeholders, every column that is currently
+// visible on the contacts dashboard can be dropped into a template as {{col:<key>}}
+// (e.g. {{col:monday_day_date}}). Resolution is synchronous (resolveMessage is called
+// during render), so the column config and the schools' monday days are loaded once
+// into this module cache by loadVariableContext() / useTemplateVariables().
+
+// Columns that already have a dedicated fixed placeholder, or that make no sense in text.
+const FIXED_COLUMN_KEYS = new Set(['name', 'phone', 'school', 'class_name', 'hackathon_date'])
+const BUILTIN_MONDAY_COLUMNS = [
+  { key: 'monday_day_date', label: 'תאריך יום מאנדיי', source: 'monday', visible: true },
+  { key: 'monday_day_status', label: 'אישרו הגעה', source: 'monday', visible: true },
+]
+
+let variableCtx = { columns: [], mondayDays: {}, loaded: false }
+let variableCtxPromise = null
+
+export function loadVariableContext() {
+  if (!variableCtxPromise) {
+    variableCtxPromise = (async () => {
+      const [settingsRes, mondayDays] = await Promise.all([
+        supabase.from('settings').select('contacts_columns').eq('id', 'global').single(),
+        loadMondayDays().catch(() => ({})),
+      ])
+      const saved = settingsRes.data?.contacts_columns || []
+      // A saved config may predate the monday columns — include them like the dashboard does.
+      const missing = BUILTIN_MONDAY_COLUMNS.filter(d => !saved.some(s => s.key === d.key))
+      variableCtx = { columns: [...saved, ...missing], mondayDays, loaded: true }
+      return variableCtx
+    })().catch(err => {
+      console.error('Error loading template variables:', err)
+      variableCtxPromise = null
+      return variableCtx
+    })
+  }
+  return variableCtxPromise
+}
+
+/** Variables offered for the active (visible) dashboard columns, as { token, label }. */
+export function columnVariables() {
+  return variableCtx.columns
+    .filter(c => c.visible && c.source !== 'journal' && !FIXED_COLUMN_KEYS.has(c.key))
+    .map(c => ({ token: `{{col:${c.key}}}`, label: c.label }))
+}
+
+function columnTokenValue(key, contact) {
+  const col = variableCtx.columns.find(c => c.key === key)
+  if (!col) return ''
+  if (col.source === 'monday') {
+    const row = mondayDayOf(contact, variableCtx.mondayDays, teacherSchools)
+    return (key === 'monday_day_date' ? formatMondayDate(row) : formatArrivalStatus(row)) || ''
+  }
+  if (col.source === 'task') return isTaskDone(contact, col) ? 'הוגש' : 'לא הוגש'
+  if (col.source === 'custom') return String(contact.custom_fields?.[key] ?? '')
+  const value = contact[key]
+  if (key === 'gender') return value === 'male' ? 'זכר' : value === 'female' ? 'נקבה' : ''
+  if (key === 'hackathon_date' || key === 'birthday') {
+    return value ? new Date(value).toLocaleDateString('he-IL') : ''
+  }
+  return value == null ? '' : String(value)
+}
+
+/**
+ * React hook: loads the variable context and returns the column variables.
+ * The returned `ready` flips to true once loaded, re-rendering previews with real values.
+ */
+export function useTemplateVariables() {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    let alive = true
+    loadVariableContext().then(() => alive && setTick(t => t + 1))
+    return () => { alive = false }
+  }, [])
+  return { variables: columnVariables(), ready: variableCtx.loaded }
+}
 
 /**
  * What we assume when the backend can't be reached.
@@ -100,6 +183,7 @@ export function resolveMessage(body, contact) {
   if (!body) return ''
   const firstName = contact.name?.split(' ')[0] || ''
   return body
+    .replace(/\{\{col:([^}]+)\}\}/g, (_, key) => columnTokenValue(key, contact))
     .replace(/\{\{name\}\}/g, firstName)
     .replace(/\{\{school\}\}/g, contact.school || '')
     .replace(/\{\{class_name\}\}/g, contact.class_name || '')

@@ -15,7 +15,7 @@ import { MENTOR, isAdminRow, isMyTeacher, isTaskDone, TASK_SOURCE_LABEL, DEFAULT
 import { interactionIcon, countsTowardRecency } from '../lib/interactions.js'
 import { loadMondayDays, mondayDayOf, formatMondayDate, formatArrivalStatus } from '../lib/mondayDays.js'
 import { teacherSchools } from '../lib/teams.js'
-import { groupMeetingsByGroupId, isScheduledMeeting } from '../lib/meetings.js'
+import { groupMeetingsByGroupId, isScheduledMeeting, isCompletedMeeting } from '../lib/meetings.js'
 
 const DEFAULT_WIDTH = 150
 const MIN_WIDTH = 60
@@ -135,6 +135,8 @@ export default function Contacts() {
   const [mondayDays, setMondayDays] = useState({}) // { [school]: school_monday_days row } — read-only here, edited on the Schools page
   const [journalMap, setJournalMap] = useState({}) // { [contactId]: { [colKey]: {content, created_at} } }
   const [lastContactMap, setLastContactMap] = useState({}) // { [contactId]: latest created_at across all interactions }
+  const [lastLiveContactMap, setLastLiveContactMap] = useState({}) // { [contactId]: latest created_at of a phone call or held meeting }
+  const [liveExpandedBucket, setLiveExpandedBucket] = useState(null)
   const [lastNonJournalMap, setLastNonJournalMap] = useState({}) // { [contactId]: latest {content, type, created_at} among non-journal interactions }
   const [expandedBucket, setExpandedBucket] = useState(null) // 'green' | 'orange' | 'red' | null
   const [pendingTasksMap, setPendingTasksMap] = useState({}) // { [contactId]: [{text, due_date}, ...] } — unresolved action items from phone-call logs
@@ -242,7 +244,13 @@ export default function Contacts() {
       if (error) throw error
       const map = {}
       const nonJournalMap = {}
+      const liveMap = {}
       for (const row of data || []) {
+        // Spoken / face-to-face only: a phone call, or a meeting that was actually held.
+        if (!liveMap[row.contact_id] && !row.metadata?.route?.startsWith?.('teacher_task') &&
+            (row.type === 'phone_call' || (row.type === 'meeting' && isCompletedMeeting(row)))) {
+          liveMap[row.contact_id] = row.created_at
+        }
         if (!countsTowardRecency(row)) continue
         if (!map[row.contact_id]) map[row.contact_id] = row.created_at
         if (row.type !== 'journal' && !nonJournalMap[row.contact_id]) {
@@ -253,6 +261,7 @@ export default function Contacts() {
       }
       setLastContactMap(map)
       setLastNonJournalMap(nonJournalMap)
+      setLastLiveContactMap(liveMap)
     } catch (err) {
       console.error('Error loading last-contact dates:', err)
     }
@@ -498,6 +507,8 @@ export default function Contacts() {
   const myTeachers = contacts.filter(isMyTeacher)
   const buckets = { green: [], orange: [], red: [] }
   for (const t of myTeachers) buckets[contactBucket(t, lastContactMap)].push(t)
+  const liveBuckets = { green: [], orange: [], red: [] }
+  for (const t of myTeachers) liveBuckets[contactBucket(t, lastLiveContactMap)].push(t)
 
   // Counts every task column regardless of its own visible/hidden state (same precedent as
   // buckets above) — hiding a column declutters the table view, it doesn't mean the task no
@@ -561,6 +572,12 @@ export default function Contacts() {
         buckets={buckets}
         expandedBucket={expandedBucket}
         onToggleBucket={key => setExpandedBucket(prev => (prev === key ? null : key))}
+      />
+      <ContactStats
+        tiles={LIVE_STAT_TILES}
+        buckets={liveBuckets}
+        expandedBucket={liveExpandedBucket}
+        onToggleBucket={key => setLiveExpandedBucket(prev => (prev === key ? null : key))}
       />
 
       <PendingTasksBanner
@@ -956,13 +973,20 @@ const STAT_TILES = [
   { key: 'red', label: 'לא דיברתי מעל שבועיים / אין קשר מתועד', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' },
 ]
 
-function ContactStats({ buckets, expandedBucket, onToggleBucket }) {
-  const activeTile = STAT_TILES.find(t => t.key === expandedBucket)
+// Same buckets, but counting only real conversations: phone calls and meetings held in person.
+const LIVE_STAT_TILES = [
+  { ...STAT_TILES[0], label: 'שוחחתי / נפגשתי ב-7 הימים האחרונים' },
+  { ...STAT_TILES[1], label: 'לא שוחחתי / נפגשתי 8–14 ימים' },
+  { ...STAT_TILES[2], label: 'לא שוחחתי / נפגשתי מעל שבועיים / אין תיעוד' },
+]
+
+function ContactStats({ tiles = STAT_TILES, buckets, expandedBucket, onToggleBucket }) {
+  const activeTile = tiles.find(t => t.key === expandedBucket)
 
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {STAT_TILES.map(tile => (
+        {tiles.map(tile => (
           <button
             key={tile.key}
             type="button"

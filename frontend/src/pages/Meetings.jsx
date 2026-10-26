@@ -256,6 +256,7 @@ function AdminMeetingEditForm({ row, onSave, onCancel, onDelete }) {
 // ─── Month trip report: every held meeting of the chosen month, school and admin ──
 function TripSummary({ month, trips }) {
   const adminTrips = trips.filter(t => t.admin)
+  const officeTrips = trips.filter(t => t.office)
   const totalKm = adminTrips.reduce((sum, t) => sum + (t.km || 0), 0)
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })
   return (
@@ -263,7 +264,7 @@ function TripSummary({ month, trips }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold text-gray-800">דוח נסיעות — {monthLabel}</h2>
         <div className="text-sm text-gray-700">
-          {trips.length} נסיעות · {trips.length - adminTrips.length} בבתי ספר · {adminTrips.length} מנהליות
+          {trips.length} נסיעות · {trips.length - adminTrips.length - officeTrips.length} בבתי ספר · {officeTrips.length} במשרד · {adminTrips.length} מנהליות
           {totalKm > 0 && <> · <b>{Math.round(totalKm * 10) / 10} ק״מ</b> (מנהליות)</>}
         </div>
       </div>
@@ -457,6 +458,7 @@ export default function Meetings() {
           finalRowIds.push(existing.id)
         } else {
           const metadata = {
+            ...(rows[0].metadata?.location ? { location: rows[0].metadata.location } : {}),
             ...(school ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
@@ -541,10 +543,11 @@ export default function Meetings() {
     ...completedGroups.filter(g => g.date && monthKey(g.date) === month).map(g => ({
       key: g.groupId,
       date: g.date,
-      place: g.schools.join(', ') || 'ללא בית ספר',
+      place: g.atOffice ? 'משרדי מאנדיי' : g.schools.join(', ') || 'ללא בית ספר',
       purpose: firstRowContent(g.rowIds, meetings),
       km: null,
       admin: false,
+      office: g.atOffice,
     })),
     ...visibleAdmin.map(r => ({
       key: r.id,
@@ -614,7 +617,9 @@ export default function Meetings() {
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-medium text-gray-800">{g.contactNames.join(', ')}</span>
-                        {g.schools.length > 0 && (
+                        {g.atOffice ? (
+                          <span className="text-xs text-gray-500 mr-2">🏢 משרדי מאנדיי</span>
+                        ) : g.schools.length > 0 && (
                           <span className="text-xs text-gray-500 mr-2">{g.schools.join(', ')}</span>
                         )}
                       </div>

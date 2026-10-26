@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { analyzeManualMeeting } from '../lib/meetingAnalysis.js'
 import { createAdminMeeting } from '../lib/adminMeetings.js'
+import { OFFICE_LOCATION } from '../lib/meetings.js'
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
@@ -14,6 +15,8 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
   const [saving, setSaving] = useState(false)
   // פגישה מנהלית: a trip with no school / teacher (offices, picking up equipment).
   const [isAdmin, setIsAdmin] = useState(false)
+  // Teacher meeting held at monday's office instead of at the school.
+  const [atOffice, setAtOffice] = useState(false)
   const [destination, setDestination] = useState('')
   const [distanceKm, setDistanceKm] = useState('')
 
@@ -73,6 +76,7 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
         metadata: {
           attendees: selected.filter(o => o.id !== t.id).map(o => o.name),
           meeting_group_id: meetingGroupId,
+          ...(atOffice ? { location: OFFICE_LOCATION } : {}),
           saved_at: new Date().toISOString(),
           ...(isFuture ? { meeting_status: 'scheduled' } : {}),
         },
@@ -157,6 +161,13 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
               </p>
             )}
           </div>
+          )}
+
+          {!isAdmin && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded-lg bg-gray-50">
+              <input type="checkbox" checked={atOffice} onChange={e => setAtOffice(e.target.checked)} className="w-4 h-4" />
+              הפגישה במשרדי מאנדיי (לא בבית הספר)
+            </label>
           )}
 
           {isAdmin && (

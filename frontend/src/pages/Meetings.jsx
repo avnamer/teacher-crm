@@ -256,6 +256,7 @@ function AdminMeetingEditForm({ row, onSave, onCancel, onDelete }) {
 // ─── Month trip report: every held meeting of the chosen month, school and admin ──
 function TripSummary({ month, trips }) {
   const adminTrips = trips.filter(t => t.admin)
+  const officeTrips = trips.filter(t => t.office)
   const totalKm = adminTrips.reduce((sum, t) => sum + (t.km || 0), 0)
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })
   return (
@@ -263,7 +264,7 @@ function TripSummary({ month, trips }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold text-gray-800">דוח נסיעות — {monthLabel}</h2>
         <div className="text-sm text-gray-700">
-          {trips.length} נסיעות · {trips.length - adminTrips.length} בבתי ספר · {adminTrips.length} מנהליות
+          {trips.length} נסיעות · {trips.length - adminTrips.length - officeTrips.length} בבתי ספר · {officeTrips.length} במשרד · {adminTrips.length} מנהליות
           {totalKm > 0 && <> · <b>{Math.round(totalKm * 10) / 10} ק״מ</b> (מנהליות)</>}
         </div>
       </div>
@@ -353,6 +354,7 @@ export default function Meetings() {
   const [openMergeKey, setOpenMergeKey] = useState(null)
   const [adminMeetings, setAdminMeetings] = useState([])
   const [openAdmin, setOpenAdmin] = useState(false)
+  const [openOffice, setOpenOffice] = useState(true)
   const [editingAdminId, setEditingAdminId] = useState(null)
   // '' = all months, otherwise 'YYYY-MM' — filters the lists below and drives the trip report.
   const [month, setMonth] = useState('')
@@ -457,6 +459,7 @@ export default function Meetings() {
           finalRowIds.push(existing.id)
         } else {
           const metadata = {
+            ...(rows[0].metadata?.location ? { location: rows[0].metadata.location } : {}),
             ...(school ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
@@ -534,6 +537,9 @@ export default function Meetings() {
   const inMonth = date => !month || monthKey(date) === month
   const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date)))
   const visibleUpcoming = upcoming.filter(g => inMonth(g.date))
+  const visibleOffice = completedGroups
+    .filter(g => g.atOffice && inMonth(g.date))
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
   const visibleAdmin = adminMeetings
     .filter(r => inMonth(r.created_at))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -541,10 +547,11 @@ export default function Meetings() {
     ...completedGroups.filter(g => g.date && monthKey(g.date) === month).map(g => ({
       key: g.groupId,
       date: g.date,
-      place: g.schools.join(', ') || 'ללא בית ספר',
+      place: g.atOffice ? 'משרדי מאנדיי' : g.schools.join(', ') || 'ללא בית ספר',
       purpose: firstRowContent(g.rowIds, meetings),
       km: null,
       admin: false,
+      office: g.atOffice,
     })),
     ...visibleAdmin.map(r => ({
       key: r.id,
@@ -614,7 +621,9 @@ export default function Meetings() {
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-medium text-gray-800">{g.contactNames.join(', ')}</span>
-                        {g.schools.length > 0 && (
+                        {g.atOffice ? (
+                          <span className="text-xs text-gray-500 mr-2">🏢 משרדי מאנדיי</span>
+                        ) : g.schools.length > 0 && (
                           <span className="text-xs text-gray-500 mr-2">{g.schools.join(', ')}</span>
                         )}
                       </div>
@@ -684,6 +693,38 @@ export default function Meetings() {
                               className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">✏️</button>
                           </div>
                         </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {visibleOffice.length > 0 && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 overflow-hidden">
+              <button onClick={() => setOpenOffice(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-right">
+                <span className="font-medium text-gray-800">🏢 פגישות במשרדי מאנדיי</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white text-gray-600">
+                    {visibleOffice.length} פגישות
+                  </span>
+                  <span className="text-gray-400 text-sm">{openOffice ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {openOffice && (
+                <div className="border-t border-indigo-200 divide-y divide-indigo-100 bg-white">
+                  {visibleOffice.map(g => (
+                    <div key={g.groupId} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-blue-600">{g.contactNames.join(', ')}</span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(g.date).toLocaleDateString('he-IL')} · לפני {daysSince(g.date)} ימים
+                        </span>
+                      </div>
+                      {firstRowContent(g.rowIds, meetings) && (
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{firstRowContent(g.rowIds, meetings)}</p>
                       )}
                     </div>
                   ))}

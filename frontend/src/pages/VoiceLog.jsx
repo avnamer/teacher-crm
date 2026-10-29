@@ -260,7 +260,7 @@ export default function VoiceLog() {
       {nextTeacher && (
         <div className="border border-gray-200 rounded-lg p-3 space-y-3" dir="rtl">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[21px] font-semibold text-gray-800 flex-1 min-w-[40%]">{nextTeacher.name}</span>
+            <span className="text-[21px] font-semibold text-gray-800">{nextTeacher.name}</span>
             <button
               onClick={() => advanceFrom(nextTeacher.id)}
               disabled={callSaving || listening}
@@ -276,7 +276,7 @@ export default function VoiceLog() {
             <a
               href={`tel:${nextTeacher.phone.replace(/[^\d+]/g, '')}`}
               onClick={() => { setCallPhase('called'); setCallError(null) }}
-              className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
+              className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 ml-auto"
             >
               📞 התקשר
             </a>

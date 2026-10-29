@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase.js'
 import { backendFetch } from '../lib/api.js'
 import { useSpeechToText } from '../hooks/useSpeechToText.js'
 import { matchTeacher } from '../lib/teacherMatch.js'
-import { insertPendingVoiceLog } from '../lib/pendingVoiceLog.js'
+import { insertPendingVoiceLog, fetchPendingVoiceLogs } from '../lib/pendingVoiceLog.js'
+import { isCompletedMeeting } from '../lib/meetings.js'
 import { isAdminTaskRecording, addAdminTasksFromVoice } from '../lib/adminTasks.js'
 
 const MENTOR = 'אבנר'
@@ -20,7 +21,7 @@ export default function VoiceLog() {
   async function loadMyTeachers() {
     const { data, error } = await supabase
       .from('contacts')
-      .select('id, name, custom_fields')
+      .select('id, name, phone, custom_fields')
       .eq('role', 'מורה מוביל/ה')
     if (error) {
       console.error('שגיאה בטעינת מורות:', error)
@@ -30,9 +31,77 @@ export default function VoiceLog() {
     setTeachers((data || []).filter(c => c.custom_fields?.mentor_name === MENTOR))
   }
 
+  // ── "Who to call next" (for the road) ──
+  // lastContactMap: contactId -> ISO date of the latest phone call / held meeting / pending
+  // voice log. handledIds: teachers already dealt with this session (didn't answer, or call saved).
+  const [lastContactMap, setLastContactMap] = useState({})
+  const [handledIds, setHandledIds] = useState(() => new Set())
+  const [callPhase, setCallPhase] = useState(null) // null | 'called' | 'recording'
+  const [callSaving, setCallSaving] = useState(false)
+  const [callError, setCallError] = useState(null)
+
+  async function loadLastContacts() {
+    const map = {}
+    const note = (id, at) => { if (id && at && (!map[id] || at > map[id])) map[id] = at }
+    const { data, error } = await supabase
+      .from('interactions')
+      .select('contact_id, created_at, type, metadata')
+      .in('type', ['phone_call', 'meeting'])
+      .order('created_at', { ascending: false })
+    if (error) { console.error('שגיאה בטעינת קשר אחרון:', error); return }
+    for (const row of data || []) {
+      if (row.metadata?.route?.startsWith?.('teacher_task')) continue
+      if (row.type === 'phone_call' || isCompletedMeeting(row)) note(row.contact_id, row.created_at)
+    }
+    // A call that was just logged is still waiting for approval, not yet an interaction.
+    try {
+      for (const log of await fetchPendingVoiceLogs(MENTOR)) {
+        if (log.communication_type && !log.route?.startsWith?.('teacher_task')) note(log.matched_contact_id, log.created_at)
+      }
+    } catch (err) {
+      console.error('שגיאה בטעינת תיעודים ממתינים:', err)
+    }
+    setLastContactMap(map)
+  }
+
   useEffect(() => {
     loadMyTeachers()
+    loadLastContacts()
   }, [])
+
+  // Longest time since a call/meeting first; teachers never spoken to come before everyone.
+  const nextTeacher = teachers
+    .filter(t => !handledIds.has(t.id) && t.phone)
+    .sort((a, b) => (lastContactMap[a.id] || '').localeCompare(lastContactMap[b.id] || ''))[0] || null
+
+  function daysSince(iso) {
+    return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null
+  }
+
+  function advanceFrom(teacherId, at) {
+    setHandledIds(prev => new Set(prev).add(teacherId))
+    if (at) setLastContactMap(prev => ({ ...prev, [teacherId]: at }))
+    setCallPhase(null)
+    setCallError(null)
+  }
+
+  async function finishCallRecording() {
+    const jobTranscript = transcript.trim()
+    stop()
+    if (!jobTranscript) { setCallPhase('called'); return }
+    reset()
+    setCallSaving(true)
+    setCallError(null)
+    const teacher = nextTeacher
+    try {
+      // Naming the teacher up front helps the analysis; the match itself is forced below.
+      const ok = await runAnalyze(null, `שיחה עם ${teacher.name}. ${jobTranscript}`, teacher)
+      if (ok) advanceFrom(teacher.id, new Date().toISOString())
+      else setCallPhase('called')
+    } finally {
+      setCallSaving(false)
+    }
+  }
 
   function updateJob(id, patch) {
     setJobs(prev => prev.map(j => (j.id === id ? { ...j, ...patch } : j)))
@@ -49,7 +118,9 @@ export default function VoiceLog() {
     setTimeout(() => removeJob(id), 4000)
   }
 
-  async function runAnalyze(id, jobTranscript) {
+  // forcedTeacher: the call flow already knows who was phoned, so no name matching is needed.
+  // Without a job id the caller handles status itself; resolves true when saved.
+  async function runAnalyze(id, jobTranscript, forcedTeacher = null) {
     try {
       const result = await backendFetch('/api/voice-log/analyze', {
         method: 'POST',
@@ -61,8 +132,8 @@ export default function VoiceLog() {
         transcript: jobTranscript,
         route: result.route === 'unclear' ? null : result.route,
         teacher_name_spoken: result.teacher_name_spoken || null,
-        matched_contact_id: certain?.id ?? null,
-        communication_type: result.communication_type || null,
+        matched_contact_id: forcedTeacher ? forcedTeacher.id : certain?.id ?? null,
+        communication_type: result.communication_type || (forcedTeacher ? 'phone_call' : null),
         summary: result.summary || null,
         action_items: result.action_items || [],
         mentioned_dates: result.mentioned_dates || [],
@@ -74,12 +145,12 @@ export default function VoiceLog() {
           future_meetings: result.future_meetings || [],
         },
       })
-      markDone(id)
+      if (id) markDone(id)
+      return true
     } catch (err) {
-      updateJob(id, {
-        status: 'error',
-        message: errorMessage(err),
-      })
+      if (id) updateJob(id, { status: 'error', message: errorMessage(err) })
+      else setCallError(errorMessage(err))
+      return false
     }
   }
 
@@ -185,6 +256,50 @@ export default function VoiceLog() {
       <h1 className="text-2xl font-bold text-gray-800 text-center">תיעוד קולי</h1>
 
       {teachersError && <p className="text-red-600 text-center">{teachersError}</p>}
+
+      {nextTeacher && (
+        <div className="border border-gray-200 rounded-lg p-3 space-y-3" dir="rtl">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="font-semibold text-gray-800 flex-1 min-w-[40%]">{nextTeacher.name}</span>
+            <span className="text-sm text-gray-500">
+              {lastContactMap[nextTeacher.id]
+                ? `לפני ${daysSince(lastContactMap[nextTeacher.id])} ימים`
+                : 'עוד לא דיברנו'}
+            </span>
+            <a
+              href={`tel:${nextTeacher.phone.replace(/[^\d+]/g, '')}`}
+              onClick={() => { setCallPhase('called'); setCallError(null) }}
+              className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
+            >
+              📞 התקשר
+            </a>
+          </div>
+          {callPhase && (
+            <div className="flex gap-3 justify-center flex-wrap">
+              <button
+                onClick={() => advanceFrom(nextTeacher.id)}
+                disabled={callSaving || listening}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                המורה לא ענה
+              </button>
+              <button
+                onClick={() => {
+                  if (callPhase === 'recording') { finishCallRecording() } else { setCallPhase('recording'); start() }
+                }}
+                disabled={callSaving || (listening && callPhase !== 'recording')}
+                className={`px-4 py-2 rounded-lg text-white disabled:opacity-40 ${
+                  callPhase === 'recording' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {callSaving ? 'שומר...' : callPhase === 'recording' ? '⏹ סיימתי, שמור' : '🎙 על מה דיברנו'}
+              </button>
+            </div>
+          )}
+          {callPhase === 'recording' && transcript && <p className="text-sm text-gray-600">{transcript}</p>}
+          {callError && <p className="text-red-600 text-center">{callError}</p>}
+        </div>
+      )}
 
       <div className="flex justify-center">
         <button

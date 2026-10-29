@@ -266,7 +266,7 @@ export default function VoiceLog() {
               disabled={callSaving || listening}
               className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-40"
             >
-              דלג על המורה
+              דלג
             </button>
             <span className="text-[21px] text-gray-500">
               {lastContactMap[nextTeacher.id]

@@ -301,7 +301,7 @@ export default function VoiceLog() {
         </div>
       )}
 
-      <div className="flex justify-center">
+      <div className="flex justify-center items-center gap-4">
         <button
           onClick={listening ? stop : startNewCall}
           className={`w-32 h-32 rounded-full text-white text-lg font-semibold shadow-lg transition-colors ${
@@ -309,6 +309,13 @@ export default function VoiceLog() {
           }`}
         >
           {listening ? '⏹ עצור' : '🎙 דבר'}
+        </button>
+        <button
+          onClick={analyze}
+          disabled={!transcript.trim()}
+          className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
+        >
+          סכם ושמור
         </button>
       </div>
 
@@ -330,13 +337,6 @@ export default function VoiceLog() {
           className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
         >
           נקה
-        </button>
-        <button
-          onClick={analyze}
-          disabled={!transcript.trim()}
-          className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
-        >
-          סכם ושמור
         </button>
       </div>
 

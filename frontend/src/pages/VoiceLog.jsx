@@ -260,8 +260,8 @@ export default function VoiceLog() {
       {nextTeacher && (
         <div className="border border-gray-200 rounded-lg p-3 space-y-3" dir="rtl">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="font-semibold text-gray-800 flex-1 min-w-[40%]">{nextTeacher.name}</span>
-            <span className="text-sm text-gray-500">
+            <span className="text-[21px] font-semibold text-gray-800 flex-1 min-w-[40%]">{nextTeacher.name}</span>
+            <span className="text-[28px] text-gray-500">
               {lastContactMap[nextTeacher.id]
                 ? `לפני ${daysSince(lastContactMap[nextTeacher.id])} ימים`
                 : 'עוד לא דיברנו'}

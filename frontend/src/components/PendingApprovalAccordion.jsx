@@ -283,7 +283,41 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
       <div className="flex items-center justify-between text-xs text-gray-400">
         <span>הוקלט: {formatRecordedAt(item.created_at)}</span>
       </div>
-      <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-2" dir="rtl">{item.transcript}</p>
+
+      {hasSummary && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              {route === 'admin_trip' ? 'מטרת הנסיעה' : isFutureMeeting ? 'נושא הפגישה' : (route === 'teacher_task' || route === 'management_task') ? 'סיכום / המשימה' : 'סיכום'}
+            </label>
+            <textarea
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              rows={3}
+              disabled={saving}
+              className="w-full border border-gray-300 rounded-lg p-2 text-right disabled:opacity-60"
+              dir="rtl"
+            />
+          </div>
+
+          {hasActionItems && (item.action_items || []).length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">מטלות המשך</label>
+              <ul className="space-y-1">
+                {item.action_items.map((actionItem, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <span className="flex-1">{actionItem.text}</span>
+                    {route === 'teacher_call' && ASSIGNEE_LABEL[actionItem.assignee] && (
+                      <span className="text-xs text-gray-500">{ASSIGNEE_LABEL[actionItem.assignee]}</span>
+                    )}
+                    {actionItem.due_date && <span className="text-gray-500">📅 {actionItem.due_date}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-600 mb-1">סוג התיעוד</label>
@@ -473,41 +507,6 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
         </div>
       )}
 
-      {hasSummary && (
-        <>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              {route === 'admin_trip' ? 'מטרת הנסיעה' : isFutureMeeting ? 'נושא הפגישה' : (route === 'teacher_task' || route === 'management_task') ? 'סיכום / המשימה' : 'סיכום'}
-            </label>
-            <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              rows={3}
-              disabled={saving}
-              className="w-full border border-gray-300 rounded-lg p-2 text-right disabled:opacity-60"
-              dir="rtl"
-            />
-          </div>
-
-          {hasActionItems && (item.action_items || []).length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">מטלות המשך</label>
-              <ul className="space-y-1">
-                {item.action_items.map((actionItem, i) => (
-                  <li key={i} className="flex items-center gap-2 text-sm">
-                    <span className="flex-1">{actionItem.text}</span>
-                    {route === 'teacher_call' && ASSIGNEE_LABEL[actionItem.assignee] && (
-                      <span className="text-xs text-gray-500">{ASSIGNEE_LABEL[actionItem.assignee]}</span>
-                    )}
-                    {actionItem.due_date && <span className="text-gray-500">📅 {actionItem.due_date}</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
-      )}
-
       {showFollowUps && (
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-600">פגישה עתידית שנקבעה בהקלטה</label>
@@ -564,6 +563,11 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
         >
           מחק
         </button>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1">הוקלט לפני עיבוד</label>
+        <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-2" dir="rtl">{item.transcript}</p>
       </div>
     </div>
   )

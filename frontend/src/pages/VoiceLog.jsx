@@ -328,25 +328,6 @@ export default function VoiceLog() {
 
       {speechError && <p className="text-red-600 text-center">{speechError}</p>}
 
-      <textarea
-        value={transcript}
-        onChange={(e) => setTranscript(e.target.value)}
-        placeholder="הטקסט שתדבר יופיע כאן..."
-        rows={8}
-        className="w-full border border-gray-300 rounded-lg p-3 text-right"
-        dir="rtl"
-      />
-
-      <div className="flex gap-3 justify-center">
-        <button
-          onClick={reset}
-          disabled={!transcript}
-          className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-        >
-          נקה
-        </button>
-      </div>
-
       {jobs.length > 0 && (
         <div className="space-y-2">
           {jobs.map(job => (
@@ -381,6 +362,25 @@ export default function VoiceLog() {
           ))}
         </div>
       )}
+
+      <textarea
+        value={transcript}
+        onChange={(e) => setTranscript(e.target.value)}
+        placeholder="הטקסט שתדבר יופיע כאן..."
+        rows={8}
+        className="w-full border border-gray-300 rounded-lg p-3 text-right"
+        dir="rtl"
+      />
+
+      <div className="flex gap-3 justify-center">
+        <button
+          onClick={reset}
+          disabled={!transcript}
+          className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+        >
+          נקה
+        </button>
+      </div>
     </div>
   )
 }

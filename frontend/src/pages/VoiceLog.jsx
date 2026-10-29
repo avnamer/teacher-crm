@@ -332,7 +332,6 @@ export default function VoiceLog() {
         <div className="space-y-2">
           {jobs.map(job => (
             <div key={job.id} className="border border-gray-200 rounded-lg p-3 text-right" dir="rtl">
-              <p className="text-sm text-gray-500 truncate">{job.transcript}</p>
               {job.status === 'processing' && <p className="text-blue-600">שומר...</p>}
               {job.status === 'done' && <p className="text-green-700">{job.doneMessage}</p>}
               {job.status === 'error' && (
@@ -358,6 +357,7 @@ export default function VoiceLog() {
                   </div>
                 </div>
               )}
+              <p className="text-sm text-gray-500 truncate">{job.transcript}</p>
             </div>
           ))}
         </div>

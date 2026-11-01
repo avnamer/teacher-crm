@@ -32,6 +32,9 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
   const [showDone, setShowDone] = useState(false)
   const [openId, setOpenId] = useState(null) // task whose original message is shown
   const [busyId, setBusyId] = useState(null)
+  const [editId, setEditId] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [editDue, setEditDue] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +80,29 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
     }
   }
 
+  function startEdit(t) {
+    setEditId(t.id)
+    setEditText(t.text)
+    setEditDue(t.due_date || '')
+  }
+
+  async function saveEdit(task) {
+    const text = editText.trim()
+    if (!text) return
+    setBusyId(task.id)
+    try {
+      const { error: err } = await supabase.from('management_tasks')
+        .update({ text, due_date: editDue || null }).eq('id', task.id)
+      if (err) throw err
+      setEditId(null)
+      await load()
+    } catch (err) {
+      alert('השמירה נכשלה: ' + err.message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const open = tasks.filter(t => !t.done).sort(compareOpen)
   const done = tasks.filter(t => t.done)
     .sort((a, b) => (b.done_at || '').localeCompare(a.done_at || ''))
@@ -87,6 +113,26 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
 
   function row(t) {
     const overdue = !t.done && t.due_date && t.due_date < today
+    if (editId === t.id) {
+      return (
+        <li key={t.id} className="px-4 py-2.5 bg-yellow-50">
+          <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2}
+            className="w-full border rounded p-2 text-sm" autoFocus />
+          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+            <label className="text-xs text-gray-600">תאריך יעד:</label>
+            <input type="date" value={editDue} onChange={e => setEditDue(e.target.value)}
+              className="border rounded px-2 py-1 text-sm" />
+            {editDue && (
+              <button onClick={() => setEditDue('')} className="text-xs text-gray-500 hover:underline">נקה</button>
+            )}
+            <span className="flex-1" />
+            <button onClick={() => setEditId(null)} className="text-sm text-gray-500 px-2">ביטול</button>
+            <button onClick={() => saveEdit(t)} disabled={busyId === t.id || !editText.trim()}
+              className="text-sm bg-blue-600 text-white rounded px-3 py-1 disabled:opacity-50">שמור</button>
+          </div>
+        </li>
+      )
+    }
     return (
       <li key={t.id} className="px-4 py-2.5">
         <div className="flex items-start gap-3">
@@ -117,6 +163,8 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
               <p className="mt-1.5 text-xs text-gray-600 bg-gray-50 border rounded p-2 whitespace-pre-wrap">{t.message_text}</p>
             )}
           </div>
+          <button onClick={() => startEdit(t)} disabled={busyId === t.id} title="ערוך"
+            className="text-gray-300 hover:text-blue-500 text-sm shrink-0">✎</button>
           <button onClick={() => remove(t)} disabled={busyId === t.id} title="מחק"
             className="text-gray-300 hover:text-red-500 text-sm shrink-0">✕</button>
         </div>

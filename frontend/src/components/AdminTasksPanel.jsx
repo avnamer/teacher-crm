@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNewTaskMarks } from '../lib/newTasks.js'
 import { Link } from 'react-router-dom'
 import { typeIcon, typeLabel } from '../lib/interactions.js'
 import {
@@ -16,6 +17,8 @@ import { addManagementTask } from '../lib/managementTasks.js'
 // logs, WhatsApp, the quick-add box here — and Avner's own tasks out of teacher calls
 // and meetings (shown with the teacher's name; they stay on the teacher's page too).
 // See lib/adminTasks.js for where they're stored.
+
+const AUTO_SOURCES = new Set(['whatsapp', 'voice_task', 'voice_pwa'])
 
 function todayStr() {
   const d = new Date()
@@ -103,6 +106,16 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
   const done = tasks.filter(t => t.done).sort(compareDone)
   const overdueCount = open.filter(t => dueStatus(t.due_date) === 'overdue').length
 
+  // Tasks that arrived by themselves: WhatsApp sync and voice logs (also those inside a
+  // voice-recorded teacher call). Typed-by-hand and recurring ones are never "new".
+  const newCandidates = useMemo(
+    () => tasks
+      .filter(t => !t.done && AUTO_SOURCES.has(t.kind === 'teacher' ? t.row_source : t.source))
+      .map(t => ({ key: t.key, created_at: t.created_at })),
+    [tasks],
+  )
+  const { highlighted, badgeCount } = useNewTaskMarks('admin', expanded, newCandidates)
+
   if (loading) return null
 
   return (
@@ -114,6 +127,11 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
           <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
             {open.length} פתוחות
           </span>
+          {badgeCount > 0 && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400 text-amber-950">
+              {badgeCount === 1 ? 'משימה חדשה' : `${badgeCount} משימות חדשות`}
+            </span>
+          )}
           {overdueCount > 0 && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">
               {overdueCount} באיחור
@@ -163,6 +181,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
                 key={task.key}
                 task={task}
                 busy={busyKey === task.key}
+                isNew={highlighted.has(task.key)}
                 editing={editingKey === task.key}
                 onStartEdit={() => setEditingKey(task.key)}
                 onCancelEdit={() => setEditingKey(null)}
@@ -209,7 +228,7 @@ export default function AdminTasksPanel({ adminContactId, reloadKey, onAdminCont
 
 const SOURCE_LABEL = { admin_panel: 'נוסף', recurring: '🔁 נוצר', voice_task: '🎙 הוכתב' }
 
-function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onToggle, onDelete }) {
+function TaskRow({ task, busy, isNew = false, editing, onStartEdit, onCancelEdit, onSave, onToggle, onDelete }) {
   if (editing) {
     return (
       <li>
@@ -235,7 +254,7 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
   }[status]
 
   return (
-    <li className={`flex items-start gap-3 rounded-lg bg-white border border-indigo-100 p-3 ${busy ? 'opacity-50' : ''}`}>
+    <li className={`flex items-start gap-3 rounded-lg border p-3 ${isNew ? 'bg-amber-50 border-amber-300' : 'bg-white border-indigo-100'} ${busy ? 'opacity-50' : ''}`}>
       <input
         type="checkbox"
         checked={task.done}
@@ -246,6 +265,9 @@ function TaskRow({ task, busy, editing, onStartEdit, onCancelEdit, onSave, onTog
       />
       <div className="flex-1 min-w-0">
         <p className={`text-sm break-words ${task.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+          {isNew && (
+            <span className="ml-2 text-xs font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">משימה חדשה</span>
+          )}
           {task.text}
         </p>
         <div className="flex items-center gap-2 mt-1 flex-wrap">

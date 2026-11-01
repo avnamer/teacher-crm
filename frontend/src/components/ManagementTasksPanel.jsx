@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useNewTaskMarks } from '../lib/newTasks.js'
 
 // "משימות מההנהלה" — tasks Benny / Mika gave in the management WhatsApp groups, found
 // by the sync (backend/src/services/managementTasks.js) and stored in management_tasks.
@@ -108,6 +109,13 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
     .sort((a, b) => (b.done_at || '').localeCompare(a.done_at || ''))
   const today = todayStr()
 
+  // Only tasks the WhatsApp sync found (they carry a message_id) can be "new".
+  const newCandidates = useMemo(
+    () => tasks.filter(t => !t.done && t.message_id).map(t => ({ key: t.id, created_at: t.created_at })),
+    [tasks],
+  )
+  const { highlighted, badgeCount } = useNewTaskMarks('management', expanded, newCandidates)
+
   // Nothing to show and nothing wrong → stay out of the way until the first task arrives.
   if (!loading && !error && tasks.length === 0) return null
 
@@ -134,12 +142,17 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
       )
     }
     return (
-      <li key={t.id} className="px-4 py-2.5">
+      <li key={t.id} className={`px-4 py-2.5 ${highlighted.has(t.id) ? 'bg-amber-50' : ''}`}>
         <div className="flex items-start gap-3">
           <input type="checkbox" checked={t.done} disabled={busyId === t.id}
             onChange={() => setDone(t, !t.done)} className="w-4 h-4 mt-1 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{t.text}</p>
+            <p className={`text-sm ${t.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+              {highlighted.has(t.id) && (
+                <span className="ml-2 text-xs font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">משימה חדשה</span>
+              )}
+              {t.text}
+            </p>
             <p className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-x-2 items-center">
               <span className={`px-1.5 rounded ${t.audience === 'me' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                 {t.audience === 'me' ? 'אליי' : 'לכל המנטורים'}
@@ -178,6 +191,11 @@ export default function ManagementTasksPanel({ reloadKey = 0 }) {
         className="w-full flex items-center justify-between px-4 py-3 text-right">
         <span className="font-semibold text-gray-800">
           משימות מההנהלה {open.length > 0 && <span className="text-sm font-normal text-gray-500">({open.length} פתוחות)</span>}
+          {badgeCount > 0 && (
+            <span className="mr-2 text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400 text-amber-950">
+              {badgeCount === 1 ? 'משימה חדשה' : `${badgeCount} משימות חדשות`}
+            </span>
+          )}
         </span>
         <span className="text-gray-400 text-sm">{expanded ? '▲' : '▼'}</span>
       </button>

@@ -548,7 +548,7 @@ export default function Meetings() {
   const allBySchool = groupMeetingsBySchool(completedGroups)
   const lastAtBySchool = Object.fromEntries(allBySchool.map(g => [g.school, g.lastAt]))
   const inMonth = date => !month || monthKey(date) === month
-  const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date)))
+  const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date) && !g.atOffice))
   const visibleUpcoming = upcoming.filter(g => inMonth(g.date))
   const visibleOffice = completedGroups
     .filter(g => g.atOffice && inMonth(g.date))

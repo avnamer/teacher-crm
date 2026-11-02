@@ -545,7 +545,8 @@ export default function Meetings() {
     for (const g of cluster.groups) clusterByGroupId[g.groupId] = cluster
   }
   // Stats tiles use every meeting; the lists below honour the month filter.
-  const allBySchool = groupMeetingsBySchool(completedGroups)
+  // Office meetings are not a visit to the school, so they don't count toward its recency.
+  const allBySchool = groupMeetingsBySchool(completedGroups.filter(g => !g.atOffice))
   const lastAtBySchool = Object.fromEntries(allBySchool.map(g => [g.school, g.lastAt]))
   const inMonth = date => !month || monthKey(date) === month
   const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date) && !g.atOffice))

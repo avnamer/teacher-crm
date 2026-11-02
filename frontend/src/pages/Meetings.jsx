@@ -658,96 +658,6 @@ export default function Meetings() {
             </div>
           )}
 
-          {visibleAdmin.length > 0 && (
-            <div className="rounded-xl border border-gray-300 bg-white overflow-hidden">
-              <button onClick={() => setOpenAdmin(o => !o)}
-                className="w-full flex items-center justify-between px-4 py-3 text-right">
-                <span className="font-medium text-gray-800">🧾 פגישות מנהליות</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                    {visibleAdmin.length} פגישות
-                  </span>
-                  <span className="text-gray-400 text-sm">{openAdmin ? '▲' : '▼'}</span>
-                </div>
-              </button>
-              {openAdmin && (
-                <div className="border-t border-gray-200 divide-y divide-gray-100">
-                  {visibleAdmin.map(r => (
-                    <div key={r.id} className="px-4 py-3">
-                      {editingAdminId === r.id ? (
-                        <AdminMeetingEditForm
-                          row={r}
-                          onCancel={() => setEditingAdminId(null)}
-                          onSave={async vals => {
-                            try {
-                              await updateAdminMeeting(r, vals)
-                              setEditingAdminId(null)
-                              await loadAll()
-                            } catch (err) { alert('שגיאה בעדכון הפגישה: ' + err.message) }
-                          }}
-                          onDelete={async () => {
-                            try {
-                              await deleteAdminMeeting(r.id)
-                              setEditingAdminId(null)
-                              await loadAll()
-                            } catch (err) { alert('שגיאה במחיקת הפגישה: ' + err.message) }
-                          }}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <span className="font-medium text-gray-800">{r.metadata?.destination || '—'}</span>
-                            {r.content && <span className="text-sm text-gray-500 mr-2">{r.content}</span>}
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {r.metadata?.distance_km != null && (
-                              <span className="text-xs text-gray-500">{r.metadata.distance_km} ק״מ</span>
-                            )}
-                            <span className="text-xs text-gray-400">{new Date(r.created_at).toLocaleDateString('he-IL')}</span>
-                            <button onClick={() => setEditingAdminId(r.id)}
-                              className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">✏️</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {visibleOffice.length > 0 && (
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50 overflow-hidden">
-              <button onClick={() => setOpenOffice(o => !o)}
-                className="w-full flex items-center justify-between px-4 py-3 text-right">
-                <span className="font-medium text-gray-800">🏢 פגישות במשרדי מאנדיי</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white text-gray-600">
-                    {visibleOffice.length} פגישות
-                  </span>
-                  <span className="text-gray-400 text-sm">{openOffice ? '▲' : '▼'}</span>
-                </div>
-              </button>
-              {openOffice && (
-                <div className="border-t border-indigo-200 divide-y divide-indigo-100 bg-white">
-                  {visibleOffice.map(g => (
-                    <div key={g.groupId} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-blue-600">{g.contactNames.join(', ')}</span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(g.date).toLocaleDateString('he-IL')} · לפני {daysSince(g.date)} ימים
-                        </span>
-                      </div>
-                      {firstRowContent(g.rowIds, meetings) && (
-                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{firstRowContent(g.rowIds, meetings)}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="space-y-2">
             {bySchool.length === 0 ? (
               <p className="text-gray-500 text-center py-8">{month ? 'אין פגישות בחודש הזה' : 'אין פגישות שתועדו'}</p>
@@ -879,6 +789,100 @@ export default function Meetings() {
               })
             )}
           </div>
+
+          {visibleAdmin.length > 0 && (
+            <div className="rounded-xl border border-gray-300 bg-white overflow-hidden">
+              <button onClick={() => setOpenAdmin(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-right">
+                <span className="font-medium text-gray-800">🧾 פגישות מנהליות</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500">לפני {daysSince(visibleAdmin[0].created_at)} ימים</span>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    {visibleAdmin.length} פגישות
+                  </span>
+                  <span className="text-gray-400 text-sm">{openAdmin ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {openAdmin && (
+                <div className="border-t border-gray-200 divide-y divide-gray-100">
+                  {visibleAdmin.map(r => (
+                    <div key={r.id} className="px-4 py-3">
+                      {editingAdminId === r.id ? (
+                        <AdminMeetingEditForm
+                          row={r}
+                          onCancel={() => setEditingAdminId(null)}
+                          onSave={async vals => {
+                            try {
+                              await updateAdminMeeting(r, vals)
+                              setEditingAdminId(null)
+                              await loadAll()
+                            } catch (err) { alert('שגיאה בעדכון הפגישה: ' + err.message) }
+                          }}
+                          onDelete={async () => {
+                            try {
+                              await deleteAdminMeeting(r.id)
+                              setEditingAdminId(null)
+                              await loadAll()
+                            } catch (err) { alert('שגיאה במחיקת הפגישה: ' + err.message) }
+                          }}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <span className="font-medium text-gray-800">{r.metadata?.destination || '—'}</span>
+                            {r.content && <span className="text-sm text-gray-500 mr-2">{r.content}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {r.metadata?.distance_km != null && (
+                              <span className="text-xs text-gray-500">{r.metadata.distance_km} ק״מ</span>
+                            )}
+                            <span className="text-xs text-gray-400">
+                              {new Date(r.created_at).toLocaleDateString('he-IL')} · לפני {daysSince(r.created_at)} ימים
+                            </span>
+                            <button onClick={() => setEditingAdminId(r.id)}
+                              className="text-xs text-gray-400 hover:text-blue-600" title="ערוך">✏️</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {visibleOffice.length > 0 && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 overflow-hidden">
+              <button onClick={() => setOpenOffice(o => !o)}
+                className="w-full flex items-center justify-between px-4 py-3 text-right">
+                <span className="font-medium text-gray-800">🏢 פגישות במשרדי מאנדיי</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500">לפני {daysSince(visibleOffice[0].date)} ימים</span>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white text-gray-600">
+                    {visibleOffice.length} פגישות
+                  </span>
+                  <span className="text-gray-400 text-sm">{openOffice ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {openOffice && (
+                <div className="border-t border-indigo-200 divide-y divide-indigo-100 bg-white">
+                  {visibleOffice.map(g => (
+                    <div key={g.groupId} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-blue-600">{g.contactNames.join(', ')}</span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(g.date).toLocaleDateString('he-IL')} · לפני {daysSince(g.date)} ימים
+                        </span>
+                      </div>
+                      {firstRowContent(g.rowIds, meetings) && (
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{firstRowContent(g.rowIds, meetings)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 

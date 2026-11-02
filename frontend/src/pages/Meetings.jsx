@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher, isAdminRow } from '../lib/teachers.js'
 import { teacherSchools } from '../lib/teams.js'
-import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId } from '../lib/meetings.js'
+import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId, OFFICE_LOCATION } from '../lib/meetings.js'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
 import { isAdminMeeting, monthKey, updateAdminMeeting, deleteAdminMeeting } from '../lib/adminMeetings.js'
@@ -76,8 +76,9 @@ function attendeeIdsForRows(rowIds, meetings) {
 }
 
 // ─── Inline edit form shared by both the past-meetings and upcoming-meetings lists ──
-function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, initialSchool, teachers, onSave, onCancel, onDelete }) {
+function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, initialSchool, initialAtOffice, teachers, onSave, onCancel, onDelete }) {
   const [school, setSchool] = useState(initialSchool || '')
+  const [atOffice, setAtOffice] = useState(!!initialAtOffice)
   const [date, setDate] = useState(initialDate)
   const [content, setContent] = useState(initialContent)
   const [selectedTeacherIds, setSelectedTeacherIds] = useState(() => new Set(initialAttendeeIds))
@@ -114,7 +115,7 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, init
     }
     setSaving(true)
     try {
-      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds], school })
+      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds], school, atOffice })
     } finally {
       setSaving(false)
     }
@@ -177,7 +178,17 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, init
         </div>
         <p className="text-xs text-gray-400 mt-1">{selectedTeacherIds.size} נבחרו</p>
       </div>
-      {schoolOptions.length > 1 && (
+      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={atOffice}
+          onChange={e => setAtOffice(e.target.checked)}
+          disabled={saving}
+          className="w-3.5 h-3.5"
+        />
+        הפגישה במשרדי מאנדיי (לא בבית הספר)
+      </label>
+      {schoolOptions.length > 1 && !atOffice && (
         <div>
           <p className="text-xs text-gray-500 mb-1">בית ספר</p>
           <select
@@ -413,7 +424,7 @@ export default function Meetings() {
   // for an unchecked one), and recomputes metadata.attendees on every surviving/new
   // row from the final selected set — then reloads so the recency banner / upcoming
   // list / past list all stay consistent.
-  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds, school }) {
+  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds, school, atOffice }) {
     const createdAt = new Date(`${date}T12:00:00`).toISOString()
     const trimmedContent = content.trim() || null
     try {
@@ -441,11 +452,13 @@ export default function Meetings() {
             meeting_group_id: _meetingGroupId,
             attendees: _oldAttendees,
             school: _oldSchool,
+            location: _oldLocation,
             ...restMetadata
           } = existing.metadata || {}
           const metadata = {
             ...restMetadata,
-            ...(school ? { school } : {}),
+            ...(atOffice ? { location: OFFICE_LOCATION } : {}),
+            ...(school && !atOffice ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
             saved_at: new Date().toISOString(),
@@ -459,8 +472,8 @@ export default function Meetings() {
           finalRowIds.push(existing.id)
         } else {
           const metadata = {
-            ...(rows[0].metadata?.location ? { location: rows[0].metadata.location } : {}),
-            ...(school ? { school } : {}),
+            ...(atOffice ? { location: OFFICE_LOCATION } : {}),
+            ...(school && !atOffice ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
             saved_at: new Date().toISOString(),
@@ -532,10 +545,11 @@ export default function Meetings() {
     for (const g of cluster.groups) clusterByGroupId[g.groupId] = cluster
   }
   // Stats tiles use every meeting; the lists below honour the month filter.
-  const allBySchool = groupMeetingsBySchool(completedGroups)
+  // Office meetings are not a visit to the school, so they don't count toward its recency.
+  const allBySchool = groupMeetingsBySchool(completedGroups.filter(g => !g.atOffice))
   const lastAtBySchool = Object.fromEntries(allBySchool.map(g => [g.school, g.lastAt]))
   const inMonth = date => !month || monthKey(date) === month
-  const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date)))
+  const bySchool = groupMeetingsBySchool(completedGroups.filter(g => inMonth(g.date) && !g.atOffice))
   const visibleUpcoming = upcoming.filter(g => inMonth(g.date))
   const visibleOffice = completedGroups
     .filter(g => g.atOffice && inMonth(g.date))
@@ -612,6 +626,7 @@ export default function Meetings() {
                       initialContent={firstRowContent(g.rowIds, meetings)}
                       initialAttendeeIds={attendeeIdsForRows(g.rowIds, meetings)}
                       initialSchool={g.schoolOverride}
+                      initialAtOffice={g.atOffice}
                       teachers={contacts}
                       onSave={vals => saveMeetingEdit(g.rowIds, vals)}
                       onCancel={() => setEditingGroupId(null)}
@@ -787,6 +802,7 @@ export default function Meetings() {
                                   initialContent={firstRowContent(meetingGroup.rowIds, meetings)}
                                   initialAttendeeIds={attendeeIdsForRows(meetingGroup.rowIds, meetings)}
                                   initialSchool={meetingGroup.schoolOverride}
+                                  initialAtOffice={meetingGroup.atOffice}
                                   teachers={contacts}
                                   onSave={vals => saveMeetingEdit(meetingGroup.rowIds, vals)}
                                   onCancel={() => setEditingGroupId(null)}

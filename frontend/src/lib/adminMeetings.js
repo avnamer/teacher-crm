@@ -8,7 +8,7 @@ import { ensureAdminContact } from './voiceLogActions.js'
 // is scoped to the teachers' contact ids, so these rows never leak into teacher
 // recency, the dashboard banners or the Schools page.
 //
-// metadata: { admin_meeting: true, destination, distance_km (number|null), saved_at }
+// metadata: { admin_meeting: true, destination, distance_km (number|null), cost (₪ ticket price, number|null), saved_at }
 // content = the purpose / description of the trip.
 
 export function isAdminMeeting(row) {
@@ -26,17 +26,18 @@ function parseKm(value) {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
-function buildMetadata({ destination, distanceKm }, previous = {}) {
+function buildMetadata({ destination, distanceKm, cost }, previous = {}) {
   return {
     ...previous,
     admin_meeting: true,
     destination: destination.trim(),
     distance_km: parseKm(distanceKm),
+    cost: parseKm(cost),
     saved_at: new Date().toISOString(),
   }
 }
 
-export async function createAdminMeeting({ date, destination, purpose, distanceKm }) {
+export async function createAdminMeeting({ date, destination, purpose, distanceKm, cost }) {
   const contactId = await ensureAdminContact()
   if (!contactId) throw new Error('לא נמצאה רשומת מנהל המערכת')
   const { error } = await supabase.from('interactions').insert({
@@ -44,18 +45,18 @@ export async function createAdminMeeting({ date, destination, purpose, distanceK
     type: 'meeting',
     content: purpose?.trim() || null,
     created_at: new Date(`${date}T12:00:00`).toISOString(),
-    metadata: buildMetadata({ destination, distanceKm }),
+    metadata: buildMetadata({ destination, distanceKm, cost }),
   })
   if (error) throw error
 }
 
-export async function updateAdminMeeting(row, { date, destination, purpose, distanceKm }) {
+export async function updateAdminMeeting(row, { date, destination, purpose, distanceKm, cost }) {
   const { error } = await supabase
     .from('interactions')
     .update({
       content: purpose?.trim() || null,
       created_at: new Date(`${date}T12:00:00`).toISOString(),
-      metadata: buildMetadata({ destination, distanceKm }, row.metadata),
+      metadata: buildMetadata({ destination, distanceKm, cost }, row.metadata),
     })
     .eq('id', row.id)
   if (error) throw error

@@ -19,6 +19,7 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
   const [atOffice, setAtOffice] = useState(false)
   const [destination, setDestination] = useState('')
   const [distanceKm, setDistanceKm] = useState('')
+  const [cost, setCost] = useState('')
 
   // String comparison works here because both sides are 'YYYY-MM-DD'.
   const isFuture = date > todayStr()
@@ -43,7 +44,7 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
     if (isAdmin) {
       setSaving(true)
       try {
-        await createAdminMeeting({ date, destination, purpose: content, distanceKm })
+        await createAdminMeeting({ date, destination, purpose: content, distanceKm, cost })
         onSaved()
       } catch (err) {
         alert('שגיאה בשמירת הפגישה: ' + err.message)
@@ -188,6 +189,15 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
                   type="number" min="0" step="0.1" inputMode="decimal"
                   value={distanceKm}
                   onChange={e => setDistanceKm(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-500 mb-1 block">עלות נסיעה בש״ח (תחבורה ציבורית — מחיר כרטיס)</label>
+                <input
+                  type="number" min="0" step="0.1" inputMode="decimal"
+                  value={cost}
+                  onChange={e => setCost(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>

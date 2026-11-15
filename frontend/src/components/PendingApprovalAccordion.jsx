@@ -41,6 +41,7 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
   const [meetingDate, setMeetingDate] = useState(extra.meeting_date || '') // future_meeting / admin_trip
   const [destination, setDestination] = useState(extra.destination || '')
   const [distanceKm, setDistanceKm] = useState(extra.distance_km ?? '')
+  const [cost, setCost] = useState(extra.cost ?? '')
   // Meetings agreed in this recording (e.g. "קבענו להיפגש ב-1 באפריל"), each offered as a
   // scheduled meeting on the Meetings page alongside whatever the log itself is saved as.
   const [followUps, setFollowUps] = useState(() =>
@@ -163,7 +164,7 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
           content: summary,
         })
       } else if (route === 'admin_trip') {
-        await createAdminMeeting({ date: meetingDate, destination, purpose: summary, distanceKm })
+        await createAdminMeeting({ date: meetingDate, destination, purpose: summary, distanceKm, cost })
       } else if (route === 'management_task') {
         for (const t of tasksToSave) {
           await addManagementTask({ text: t.text, due_date: t.due_date, sender_name: 'הקלטה קולית' })
@@ -416,6 +417,16 @@ function PendingVoiceLogCard({ item: rawItem, teachers, onApproved, onDeleted })
               type="number" min="0" step="0.1" inputMode="decimal"
               value={distanceKm}
               onChange={(e) => setDistanceKm(e.target.value)}
+              disabled={saving}
+              className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">עלות נסיעה בש״ח (תחבורה ציבורית)</label>
+            <input
+              type="number" min="0" step="0.1" inputMode="decimal"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
               disabled={saving}
               className="w-full border border-gray-300 rounded-lg p-2 disabled:opacity-60"
             />

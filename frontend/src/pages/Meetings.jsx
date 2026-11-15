@@ -226,6 +226,7 @@ function AdminMeetingEditForm({ row, onSave, onCancel, onDelete }) {
   const [destination, setDestination] = useState(row.metadata?.destination || '')
   const [purpose, setPurpose] = useState(row.content || '')
   const [distanceKm, setDistanceKm] = useState(row.metadata?.distance_km ?? '')
+  const [cost, setCost] = useState(row.metadata?.cost ?? '')
   const [saving, setSaving] = useState(false)
 
   async function run(fn) {
@@ -246,10 +247,12 @@ function AdminMeetingEditForm({ row, onSave, onCancel, onDelete }) {
       <input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="מטרה / תיאור" className={inputCls} />
       <input type="number" min="0" step="0.1" inputMode="decimal" value={distanceKm}
         onChange={e => setDistanceKm(e.target.value)} placeholder='מרחק בק״מ' className={inputCls} />
+      <input type="number" min="0" step="0.1" inputMode="decimal" value={cost}
+        onChange={e => setCost(e.target.value)} placeholder='עלות נסיעה בש״ח (תחבורה ציבורית)' className={inputCls} />
       <div className="flex gap-2">
         <button disabled={saving} onClick={() => {
           if (!destination.trim()) { alert('יש למלא יעד / מקום'); return }
-          run(() => onSave({ date, destination, purpose, distanceKm }))
+          run(() => onSave({ date, destination, purpose, distanceKm, cost }))
         }} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">
           {saving ? 'שומר...' : 'שמור'}
         </button>
@@ -269,6 +272,7 @@ function TripSummary({ month, trips }) {
   const adminTrips = trips.filter(t => t.admin)
   const officeTrips = trips.filter(t => t.office)
   const totalKm = adminTrips.reduce((sum, t) => sum + (t.km || 0), 0)
+  const totalCost = adminTrips.reduce((sum, t) => sum + (t.cost || 0), 0)
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })
   return (
     <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
@@ -277,6 +281,7 @@ function TripSummary({ month, trips }) {
         <div className="text-sm text-gray-700">
           {trips.length} נסיעות · {trips.length - adminTrips.length - officeTrips.length} בבתי ספר · {officeTrips.length} במשרד · {adminTrips.length} מנהליות
           {totalKm > 0 && <> · <b>{Math.round(totalKm * 10) / 10} ק״מ</b> (מנהליות)</>}
+          {totalCost > 0 && <> · <b>₪{Math.round(totalCost * 100) / 100}</b> (תחבורה ציבורית)</>}
         </div>
       </div>
       {trips.length === 0 ? (
@@ -289,6 +294,7 @@ function TripSummary({ month, trips }) {
               <th className="text-right px-3 py-2">יעד</th>
               <th className="text-right px-3 py-2">מטרה</th>
               <th className="text-right px-3 py-2">ק״מ</th>
+              <th className="text-right px-3 py-2">עלות</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -298,6 +304,7 @@ function TripSummary({ month, trips }) {
                 <td className="px-3 py-2">{t.place}{t.admin && <span className="text-xs text-gray-400 mr-1">(מנהלית)</span>}</td>
                 <td className="px-3 py-2 text-gray-600">{t.purpose}</td>
                 <td className="px-3 py-2">{t.km ?? ''}</td>
+                <td className="px-3 py-2">{t.cost != null ? `₪${t.cost}` : ''}</td>
               </tr>
             ))}
           </tbody>
@@ -564,6 +571,7 @@ export default function Meetings() {
       place: g.atOffice ? 'משרדי מאנדיי' : g.schools.join(', ') || 'ללא בית ספר',
       purpose: firstRowContent(g.rowIds, meetings),
       km: null,
+      cost: null,
       admin: false,
       office: g.atOffice,
     })),
@@ -573,6 +581,7 @@ export default function Meetings() {
       place: r.metadata?.destination || '—',
       purpose: r.content || '',
       km: r.metadata?.distance_km ?? null,
+      cost: r.metadata?.cost ?? null,
       admin: true,
     })),
   ].sort((a, b) => new Date(a.date) - new Date(b.date))
@@ -835,6 +844,9 @@ export default function Meetings() {
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {r.metadata?.distance_km != null && (
                               <span className="text-xs text-gray-500">{r.metadata.distance_km} ק״מ</span>
+                            )}
+                            {r.metadata?.cost != null && (
+                              <span className="text-xs text-gray-500">₪{r.metadata.cost}</span>
                             )}
                             <span className="text-xs text-gray-400">
                               {new Date(r.created_at).toLocaleDateString('he-IL')} · לפני {daysSince(r.created_at)} ימים

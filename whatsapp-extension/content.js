@@ -16,7 +16,7 @@
 // "still seeing the old error" report can be checked in 2 seconds instead of
 // guessing whether the extension+tab reload actually picked up the latest
 // code (this has been the actual cause more than once during testing).
-const CONTENT_JS_BUILD = '2026-10-21-guided-send'
+const CONTENT_JS_BUILD = '2026-11-17-group-find'
 console.log(`%c[whatsapp-sync] content.js loaded — build ${CONTENT_JS_BUILD}`, 'color: #2563eb; font-weight: bold')
 
 // Confirmed live (2026-09-29): WhatsApp's virtualized list only responds to
@@ -522,20 +522,51 @@ function looseChatKey(str) {
   return (str || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
+// Picks the chat-list row for `name`: exact loose key first, then one title
+// containing the other (WhatsApp group names get extra/missing words), and
+// only if that is unambiguous (exactly one row).
+function findChatRowByName(items, name) {
+  const wanted = looseChatKey(name)
+  const titleOf = item => queryFirst(WA_SELECTORS.chatListItemTitle, item)?.textContent?.trim() || ''
+  const exact = items.find(item => titleOf(item) === name || looseChatKey(titleOf(item)) === wanted)
+  if (exact) return exact
+  if (wanted.length < 6) return null
+  const partial = items.filter(item => {
+    const key = looseChatKey(titleOf(item))
+    return key.length >= 6 && (key.includes(wanted) || wanted.includes(key))
+  })
+  return partial.length === 1 ? partial[0] : null
+}
+
 async function openChatByName(name) {
   const searchBox = requireFirst(WA_SELECTORS.chatSearchBox, document, 'תיבת חיפוש')
   const before = currentFirstMessageId()
-  clearAndType(searchBox, name)
-  // Confirmed live (2026-09-28): results are present in the DOM well before
-  // a click on them actually navigates — 800ms wasn't enough real settle time.
-  await sleep(1800)
-  const items = queryAllFirst(WA_SELECTORS.chatListItem, document)
-  const match = items.find(item => {
-    const title = queryFirst(WA_SELECTORS.chatListItemTitle, item)
-    const text = title?.textContent?.trim() || ''
-    return text === name || looseChatKey(text) === looseChatKey(name)
-  })
-  if (!match) return false
+  // Full name first; if WhatsApp's real group name differs a bit the full-name
+  // search returns nothing, so retry with progressively shorter prefixes.
+  const words = (name || '').trim().split(/\s+/)
+  const queries = [name]
+  if (words.length > 3) queries.push(words.slice(0, 3).join(' '))
+  if (words.length > 2) queries.push(words.slice(0, 2).join(' '))
+  let match = null
+  const seenTitles = []
+  for (const q of queries) {
+    clearAndType(searchBox, q)
+    // Confirmed live (2026-09-28): results are present in the DOM well before
+    // a click on them actually navigates — 800ms wasn't enough real settle time.
+    await sleep(1800)
+    const items = queryAllFirst(WA_SELECTORS.chatListItem, document)
+    match = findChatRowByName(items, name)
+    if (match) break
+    for (const item of items) {
+      const t = queryFirst(WA_SELECTORS.chatListItemTitle, item)?.textContent?.trim()
+      if (t && !seenTitles.includes(t)) seenTitles.push(t)
+    }
+  }
+  if (!match) {
+    console.warn('[whatsapp-sync] group not found:', JSON.stringify(name), 'search results seen:', seenTitles)
+    clearSearchBoxSafely()
+    return false
+  }
   const switched = await clickUntilChatOpens(match, before)
   clearSearchBoxSafely()
   return switched

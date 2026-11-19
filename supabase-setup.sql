@@ -480,3 +480,13 @@ CREATE TABLE IF NOT EXISTS school_challenge_progress (
 );
 ALTER TABLE school_challenge_progress ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Owner read only" ON school_challenge_progress FOR SELECT USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- היסטוריית סנכרונים של ההתקדמות: כל קובץ שמיובא נשמר כ"תמונת מצב" לפי as_of, ולא מוחק את הקודמים.
+-- ככה האפליקציה יכולה להציג על כל פס את הערכים בסנכרונים הקודמים. הייבוא של אותו as_of פעם שנייה מחליף רק אותו.
+-- (להרצה חד-פעמית ב-SQL Editor, לפני הייבוא הבא)
+-- ─────────────────────────────────────────────────────────────
+UPDATE school_challenge_progress SET as_of = now() WHERE as_of IS NULL;
+ALTER TABLE school_challenge_progress ALTER COLUMN as_of SET NOT NULL;
+ALTER TABLE school_challenge_progress DROP CONSTRAINT IF EXISTS school_challenge_progress_pkey;
+ALTER TABLE school_challenge_progress ADD PRIMARY KEY (school, role, challenge, unit, as_of);

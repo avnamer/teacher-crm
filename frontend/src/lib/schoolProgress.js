@@ -29,21 +29,45 @@ export function percentOf(entered, total) {
   return total > 0 ? Math.round((entered / total) * 1000) / 10 : null
 }
 
+export const MAX_PREVIOUS_SNAPSHOTS = 4 // how many earlier syncs are drawn as ticks on each bar
+
 /**
  * Groups rows into challenges (newest first), each with its summary row and units.
- * `totals` = { students, teachers } — the denominators.
+ * `rows` holds ALL imported snapshots (one per as_of); the newest is "current" and the others are history.
+ * `totals` = { students, teachers } — the denominators (same for every snapshot, so ticks are comparable).
  * Returns { asOf, challenges: [{ name, number, students, teachers }] } where each of students/teachers is
- * { summary, units } of { label, entered, percent, passed }.
+ * { summary, units } of { label, entered, percent, passed, previous }.
+ * `previous` = ticks for earlier syncs, newest first: [{ asOf, entered, percent, rank }]. Ticks whose value equals the
+ * current one are dropped, and equal values from several syncs collapse into one (labelled with the newest date).
+ * rank 0 = the sync right before the current one; larger = older (drawn lighter).
  */
 export function buildProgress(rows, totals) {
-  const asOf = rows.map(r => r.as_of).filter(Boolean).sort().pop() || null
+  const snapshots = [...new Set(rows.map(r => r.as_of).filter(Boolean))].sort().reverse()
+  const asOf = snapshots[0] || null
+  const earlier = snapshots.slice(1, 1 + MAX_PREVIOUS_SNAPSHOTS)
+  const rankOf = new Map(earlier.map((d, i) => [d, i]))
+
+  const history = new Map() // `${role}|${challenge}|${unit}` -> [{ asOf, entered }] (newest first)
+  for (const r of rows) {
+    if (!rankOf.has(r.as_of)) continue
+    const k = `${r.role}|${r.challenge}|${r.unit}`
+    if (!history.has(k)) history.set(k, [])
+    history.get(k).push({ asOf: r.as_of, entered: r.entered, rank: rankOf.get(r.as_of) })
+  }
+
   const byChallenge = new Map()
   for (const r of rows) {
+    if (r.as_of !== asOf) continue
     if (!byChallenge.has(r.challenge)) byChallenge.set(r.challenge, { name: r.challenge, number: challengeNumber(r.challenge), students: null, teachers: null })
     const c = byChallenge.get(r.challenge)
     const total = totals[r.role]
     const percent = percentOf(r.entered, total)
-    const item = { label: r.unit, entered: r.entered, percent, passed: percent !== null && r.entered / total >= PASS_RATIO }
+    const seen = new Set([r.entered])
+    const previous = (history.get(`${r.role}|${r.challenge}|${r.unit}`) || [])
+      .sort((a, b) => a.rank - b.rank)
+      .filter(h => !seen.has(h.entered) && seen.add(h.entered))
+      .map(h => ({ ...h, percent: percentOf(h.entered, total) }))
+    const item = { label: r.unit, entered: r.entered, percent, passed: percent !== null && r.entered / total >= PASS_RATIO, previous }
     c[r.role] ??= { summary: null, units: [] }
     if (r.unit === r.challenge) c[r.role].summary = item
     else c[r.role].units.push(item)

@@ -171,14 +171,45 @@ function formatAsOf(iso) {
   return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+const shortDate = iso => new Date(iso).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' }).replace(/\//g, '.')
+
+// Black ticks on the bar = the value at earlier syncs (newest sync darkest). A tick that equals the current value is
+// not drawn (buildProgress drops it), so an unchanged bar shows only its own end. A tick to the right of the bar's end
+// means the number went DOWN since that sync (drawn red).
+function PreviousTicks({ item, total }) {
+  if (!item.previous?.length) return null
+  let lastLabelAt = null
+  return item.previous.map(p => {
+    const pos = Math.min(100, p.percent ?? 0)
+    const showLabel = lastLabelAt === null || Math.abs(pos - lastLabelAt) >= 9
+    if (showLabel) lastLabelAt = pos
+    const dropped = p.entered > item.entered
+    const color = dropped ? 'bg-red-500' : p.rank === 0 ? 'bg-black' : 'bg-gray-500'
+    return (
+      <div key={p.asOf} className="absolute -top-3 bottom-0 pointer-events-none" style={{ right: `${pos}%` }}
+        title={`${shortDate(p.asOf)}: ${p.entered}${total > 0 ? ` מתוך ${total}` : ''}${p.percent !== null ? ` · ${p.percent}%` : ''}`}>
+        <div className={`absolute inset-y-0 w-0.5 ${color}`} />
+        {showLabel && (
+          <span className={`absolute top-0 text-[9px] leading-none whitespace-nowrap ${dropped ? 'text-red-600' : p.rank === 0 ? 'text-black' : 'text-gray-500'}`}
+            style={{ transform: 'translateX(50%)', right: 0 }}>{shortDate(p.asOf)}</span>
+        )}
+      </div>
+    )
+  })
+}
+
 function ProgressBar({ item, total }) {
   const pct = item.percent ?? 0
+  const hasTicks = item.previous?.length > 0
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm">
+    <div className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm ${hasTicks ? 'pt-3' : ''}`}>
       <span className="sm:w-72 shrink-0 text-gray-700 truncate" title={item.label}>{item.label}</span>
-      <div className="relative flex-1 h-3 bg-gray-100 rounded-full overflow-hidden min-w-16">
-        <div className={`h-full rounded-full ${item.passed ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
-        <div className="absolute inset-y-0 w-px bg-gray-400" style={{ right: `${PASS_RATIO * 100}%` }} title="33%" />
+      <div className="relative flex-1 min-w-16 h-3">
+        <div className="absolute inset-0 bg-gray-100 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full ${item.passed ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+          <div className="absolute inset-y-0 w-px bg-gray-400" style={{ right: `${PASS_RATIO * 100}%` }} title="33%" />
+        </div>
+        <PreviousTicks item={item} total={total} />
       </div>
       <span className="sm:w-32 shrink-0 text-gray-600 text-xs">
         {item.entered}{total > 0 ? ` מתוך ${total}` : ''}{item.percent !== null && ` · ${item.percent}%`}
@@ -253,7 +284,7 @@ function ProgressBanner({ school, teachers }) {
       <RoleColumn title={role === 'students' ? '🎓 תלמידים' : '👩‍🏫 מורים'} data={current[role]} total={totals[role]}
         totalNote={role === 'teachers' ? `${totals.teachers} מורים`
           : totals.students > 0 ? `${totals.students} תלמידים בנבחרות` : 'לא הוזן מספר תלמידים בנבחרות'} />
-      <p className="text-xs text-gray-400">האחוזים מחושבים מתוך סך התלמידים/המורים של בית הספר (לא מתוך "רשומים"). הקו האפור = 33%; ירוק = עבר 33%.</p>
+      <p className="text-xs text-gray-400">האחוזים מחושבים מתוך סך התלמידים/המורים של בית הספר (לא מתוך "רשומים"). הקו האפור = 33%; ירוק = עבר 33%. קו שחור עם תאריך = הערך בסנכרון קודם (אדום = הערך ירד).</p>
       {older.map(c => (
         <details key={c.name} className="border-t border-gray-200 pt-3">
           <summary className="cursor-pointer text-sm font-medium text-gray-700">

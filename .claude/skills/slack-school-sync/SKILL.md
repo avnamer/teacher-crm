@@ -11,7 +11,7 @@ asking more often returns the same "נכון ל" timestamp — that is expected,
 
 - Channel: https://app.slack.com/client/T0CK48SJB3Q/C0CGYPS2EAZ
 - Existing thread with the CSV conversation: the 12:08 message "אני רוצה לדעת בבתי הספר השונים שלי להיכן הם הגיעו…" (open its replies).
-- Import script: `scripts/import-school-progress.mjs` (dry run by default, `--apply` replaces the whole `school_challenge_progress` table). Name mapping: `scripts/school-progress-aliases.json` (unknown names abort).
+- Import script: `scripts/import-school-progress.mjs` (dry run by default; `--apply` saves the file as a snapshot keyed by its "נכון ל" date and KEEPS older snapshots, so the Schools page can draw trend ticks; re-importing the same date replaces only that snapshot). Name mapping: `scripts/school-progress-aliases.json` (unknown names abort).
 - Reply in Hebrew, short, no jargon.
 
 ## Permissions (user approved the *flow* on 2026-11-19; keep these rules)
@@ -45,12 +45,12 @@ asking more often returns the same "נכון ל" timestamp — that is expected,
    - If "נכון ל" equals the date of the last import → tell the user nothing is new (Gaya refreshes weekly) and stop unless they want it anyway.
    - Unknown school name → script aborts; add the alias to `scripts/school-progress-aliases.json` (CRM name is the target) after confirming the match with the user, then re-run.
    - Note Gaya has hallucinated a school name before ("התיכון הטכנולוגי חדרה" instead of "תיכון חטיבה חדרה"); the CRM name is the source of truth.
-7. After approval: `node scripts/import-school-progress.mjs <csv> --apply` → expect "הנתונים עודכנו".
+7. After approval: `node scripts/import-school-progress.mjs <csv> --apply` → expect "הסנכרון נשמר".
 8. Close the Chrome tab you opened. Tell the user: rows imported, "נכון ל" date, and that the app
    (Schools page) reads the table — nothing to deploy (data only, no code change, no Netlify credits).
 
 ## Notes
-- Needs `backend/.env` with `SUPABASE_SERVICE_KEY`; the script bypasses RLS and **replaces** the table content.
+- Needs `backend/.env` with `SUPABASE_SERVICE_KEY`; the script bypasses RLS and adds a snapshot (needs the PK-with-`as_of` migration from the end of `supabase-setup.sql`, run once in the Supabase SQL editor).
 - Gaya cannot be scheduled from here; a fully automatic sync would need her owner (גיא מזרחי) to
   grant API/MCP access, or a Slack app token — out of scope for this skill.
 - Slack's MCP connector (plugin:finance:slack) needs `/mcp` authorization; until then this skill uses Chrome.

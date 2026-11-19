@@ -1,7 +1,11 @@
 // Import the 3D-center progress CSV -> school_challenge_progress (the app only reads it).
 //
 //   node scripts/import-school-progress.mjs <file.csv>           # dry run
-//   node scripts/import-school-progress.mjs <file.csv> --apply   # replaces the table's content
+//   node scripts/import-school-progress.mjs <file.csv> --apply   # adds this file as a snapshot
+//
+// Each file is one snapshot, keyed by its "נכון ל" timestamp (as_of). Older snapshots are KEPT so the app
+// can show trends; re-importing a file with the same as_of replaces only that snapshot (safe to repeat).
+// Needs the migration at the end of supabase-setup.sql (primary key includes as_of).
 //
 // CSV columns: נכון ל, בית ספר, תפקיד, רשומים, קורס, יחידה, נכנסו ליחידה, אחוז מהרשומים, עבר 33%
 // The CSV's percent columns are ignored — the app recomputes from the school's total students.
@@ -72,13 +76,19 @@ for (const [asOf, csvSchool, role, registered, challenge, unit, entered] of line
   })
 }
 if (unknown.size) { console.error('בתי ספר שאינם ב-school-progress-aliases.json:', [...unknown]); process.exit(1) }
-console.log(`${out.length} שורות, ${new Set(out.map(r => r.school)).size} בתי ספר, נכון ל-${out[0]?.as_of}`)
+const snapshots = [...new Set(out.map(r => r.as_of))]
+if (snapshots.length !== 1) { console.error('הקובץ חייב להכיל "נכון ל" אחד בלבד, נמצאו:', snapshots); process.exit(1) }
+console.log(`${out.length} שורות, ${new Set(out.map(r => r.school)).size} בתי ספר, נכון ל-${snapshots[0]}`)
 if (flag !== '--apply') { console.log('dry run — הוסף --apply כדי לכתוב'); process.exit(0) }
 
 const headers = { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' }
 const url = `${env.SUPABASE_URL}/rest/v1/school_challenge_progress`
-const del = await fetch(`${url}?school=neq.__none__`, { method: 'DELETE', headers })
+const del = await fetch(`${url}?as_of=eq.${encodeURIComponent(snapshots[0])}`, { method: 'DELETE', headers })
 if (!del.ok) { console.error('delete failed:', del.status, await del.text()); process.exit(1) }
 const w = await fetch(url, { method: 'POST', headers, body: JSON.stringify(out) })
-if (!w.ok) { console.error('write failed:', w.status, await w.text()); process.exit(1) }
-console.log('הנתונים עודכנו')
+if (!w.ok) {
+  console.error('write failed:', w.status, await w.text())
+  console.error('אם זו שגיאת duplicate key — הרץ קודם את בלוק ה-SQL האחרון (היסטוריית סנכרונים) מ-supabase-setup.sql')
+  process.exit(1)
+}
+console.log('הסנכרון נשמר (סנכרונים קודמים נשמרו)')

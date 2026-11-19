@@ -5,6 +5,7 @@ import { isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL
 import { fetchAdminTasks, setAdminTaskDone } from '../lib/adminTasks.js'
 import { interactionIcon, typeLabel } from '../lib/interactions.js'
 import { loadMondayDay, MONDAY_STATUSES } from '../lib/mondayDays.js'
+import { loadSchoolProgress, buildProgress, PASS_RATIO } from '../lib/schoolProgress.js'
 import { loadSchoolLocation, saveSchoolLocation, clearSchoolLocation, mapsPinUrl } from '../lib/schoolLocations.js'
 import { allSchools, teacherSchools, teamsInSchool, studentCount, formatTeam } from '../lib/teams.js'
 import {
@@ -122,6 +123,7 @@ export default function Schools() {
         <p className="text-center text-gray-500 py-8">לא נמצאו מורים בבית הספר הזה{showAll ? '' : ' (נסה לסמן "כולל אנשי קשר שאינם המורים שלי")'}.</p>
       ) : (
         <>
+          <ProgressBanner key={`progress-${school}`} school={school} teachers={teachers} />
           <TeachersSection school={school} teachers={teachers} />
           <MondayDaySection key={`monday-${school}`} school={school} />
           <LocationSection key={`loc-${school}`} school={school} />
@@ -158,6 +160,113 @@ function Card({ title, aside, children }) {
         {aside}
       </div>
       {children}
+    </section>
+  )
+}
+
+// ─── באנר התקדמות בתוכנית האתגרים (3D Center) ───────────────────────────────
+
+function formatAsOf(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function ProgressBar({ item, total }) {
+  const pct = item.percent ?? 0
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm">
+      <span className="sm:w-72 shrink-0 text-gray-700 truncate" title={item.label}>{item.label}</span>
+      <div className="relative flex-1 h-3 bg-gray-100 rounded-full overflow-hidden min-w-16">
+        <div className={`h-full rounded-full ${item.passed ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+        <div className="absolute inset-y-0 w-px bg-gray-400" style={{ right: `${PASS_RATIO * 100}%` }} title="33%" />
+      </div>
+      <span className="sm:w-32 shrink-0 text-gray-600 text-xs">
+        {item.entered}{total > 0 ? ` מתוך ${total}` : ''}{item.percent !== null && ` · ${item.percent}%`}
+      </span>
+    </div>
+  )
+}
+
+function RoleColumn({ title, data, total, totalNote }) {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-semibold text-gray-800">
+        {title} <span className="font-normal text-gray-500">({totalNote})</span>
+      </h4>
+      {!data ? <p className="text-sm text-gray-400">אין נתונים</p> : (
+        <>
+          {data.summary && (
+            <div className="font-medium"><ProgressBar item={{ ...data.summary, label: 'נכנסו לאתגר' }} total={total} /></div>
+          )}
+          {data.units.map(u => <ProgressBar key={u.label} item={u} total={total} />)}
+        </>
+      )}
+    </div>
+  )
+}
+
+function ProgressBanner({ school, teachers }) {
+  const [rows, setRows] = useState(undefined) // undefined = loading
+  const [error, setError] = useState('')
+  // Students are what matters most; the choice is remembered per browser.
+  const [role, setRole] = useState(() => {
+    try { return localStorage.getItem('progressRole') === 'teachers' ? 'teachers' : 'students' } catch { return 'students' }
+  })
+  function pickRole(value) {
+    setRole(value)
+    try { localStorage.setItem('progressRole', value) } catch { /* private mode */ }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    loadSchoolProgress(school)
+      .then(r => { if (!cancelled) setRows(r) })
+      .catch(err => { if (!cancelled) { setRows([]); setError(err.message) } })
+    return () => { cancelled = true }
+  }, [school])
+
+  const totals = useMemo(() => ({
+    students: teachers.reduce((n, t) => n + teamsInSchool(t, school).reduce((m, team) => m + studentCount(team), 0), 0),
+    teachers: teachers.length,
+  }), [teachers, school])
+  const progress = useMemo(() => (rows ? buildProgress(rows, totals) : null), [rows, totals])
+
+  if (rows === undefined) return null
+  if (error) return <p className="text-sm text-red-600">{error}</p>
+  if (rows.length === 0) return null
+  const [current, ...older] = progress.challenges
+
+  return (
+    <section className="bg-gradient-to-l from-blue-50 to-white rounded-xl shadow-sm border border-blue-200 p-4 sm:p-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-gray-800">🚀 התקדמות בתוכנית: {current.name}</h2>
+        <span className="text-xs text-gray-500">הנתונים נשאבו: {formatAsOf(progress.asOf)}</span>
+      </div>
+      <div className="inline-flex rounded-lg border border-blue-200 bg-white p-0.5 text-sm">
+        {[['students', '🎓 תלמידים'], ['teachers', '👩‍🏫 מורים']].map(([value, label]) => (
+          <button key={value} onClick={() => pickRole(value)}
+            className={`px-4 py-1.5 rounded-md ${role === value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <RoleColumn title={role === 'students' ? '🎓 תלמידים' : '👩‍🏫 מורים'} data={current[role]} total={totals[role]}
+        totalNote={role === 'teachers' ? `${totals.teachers} מורים`
+          : totals.students > 0 ? `${totals.students} תלמידים בנבחרות` : 'לא הוזן מספר תלמידים בנבחרות'} />
+      <p className="text-xs text-gray-400">האחוזים מחושבים מתוך סך התלמידים/המורים של בית הספר (לא מתוך "רשומים"). הקו האפור = 33%; ירוק = עבר 33%.</p>
+      {older.map(c => (
+        <details key={c.name} className="border-t border-gray-200 pt-3">
+          <summary className="cursor-pointer text-sm font-medium text-gray-700">
+            {c.name}
+            {c.students?.summary && <span className="font-normal text-gray-500"> · תלמידים: {c.students.summary.entered}{c.students.summary.percent !== null && ` (${c.students.summary.percent}%)`}</span>}
+            {c.teachers?.summary && <span className="font-normal text-gray-500"> · מורים: {c.teachers.summary.entered} מתוך {totals.teachers}</span>}
+          </summary>
+          <div className="mt-3">
+            <RoleColumn title={role === 'students' ? '🎓 תלמידים' : '👩‍🏫 מורים'} data={c[role]} total={totals[role]}
+              totalNote={role === 'students' ? `${totals.students} תלמידים` : `${totals.teachers} מורים`} />
+          </div>
+        </details>
+      ))}
     </section>
   )
 }

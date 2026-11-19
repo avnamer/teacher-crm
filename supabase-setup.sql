@@ -460,3 +460,23 @@ CREATE TABLE IF NOT EXISTS school_monday_days (
 ALTER TABLE school_monday_days ENABLE ROW LEVEL SECURITY;
 -- קריאה בלבד מהאפליקציה; הכתיבה רק מסקריפט הסנכרון (scripts/sync-monday-days.mjs, service key)
 CREATE POLICY "Owner read only" ON school_monday_days FOR SELECT USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
+
+-- ─────────────────────────────────────────────────────────────
+-- התקדמות בתוכנית האתגרים (3D Center) לפי בית ספר. שורה אחת לכל (בית ספר, תפקיד, אתגר, יחידה): כמה נכנסו.
+-- מיובא מקובץ CSV ע"י scripts/import-school-progress.mjs (service key). האחוזים לא נשמרים — האפליקציה מחשבת אותם
+-- מתוך סך התלמידים בנבחרות של בית הספר (ולא מתוך "רשומים"). unit = challenge בשורת הסיכום של האתגר.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS school_challenge_progress (
+  school TEXT NOT NULL,          -- שם בית הספר כפי שהוא בכרטיסי המורים
+  csv_school TEXT,               -- השם כפי שהופיע בקובץ
+  role TEXT NOT NULL CHECK (role IN ('students','teachers')),
+  challenge TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  position INT NOT NULL DEFAULT 0, -- סדר היחידה בקובץ (0 = סיכום האתגר)
+  registered INT NOT NULL DEFAULT 0,
+  entered INT NOT NULL DEFAULT 0,
+  as_of TIMESTAMPTZ,             -- מועד שאיבת הנתונים (מהקובץ)
+  PRIMARY KEY (school, role, challenge, unit)
+);
+ALTER TABLE school_challenge_progress ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner read only" ON school_challenge_progress FOR SELECT USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com');

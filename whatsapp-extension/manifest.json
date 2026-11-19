@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "סנכרון וואטסאפ ל-Teacher CRM",
-  "version": "1.1.0",
-  "version_name": "2026-10-21-guided-send",
+  "version": "1.1.1",
+  "version_name": "2026-11-17-group-find",
   "description": "קורא הודעות וואטסאפ ממורים ומקבוצות נבחרות ומתעד אותן ב-Teacher CRM. קוראת את מה שמוצג ב-WhatsApp Web, ובשליחה מונחית רק פותחת את הצ'אט עם ההודעה מוכנה — הלחיצה על שליחה תמיד ידנית. לא משתמשת בשום ספרייה לא-רשמית.",
   "permissions": ["storage", "alarms", "tabs", "debugger", "tabCapture", "offscreen"],
   "host_permissions": [

@@ -9,9 +9,11 @@
 const DAY_MS = 24 * 3600 * 1000
 const HEARTBEAT_STALE_MS = 5 * 60 * 1000
 
-/** Spec §3.4: green if a sync succeeded within the last 24h, red otherwise. */
+/** A sync is "fresh" (green) for a week, then the banner turns red. Shared by every sync banner on the dashboard. */
+export const FRESH_MS = 7 * DAY_MS
+
 export function isSuccessFresh(lastSuccessAt) {
-  return !!lastSuccessAt && Date.now() - new Date(lastSuccessAt).getTime() < DAY_MS
+  return !!lastSuccessAt && Date.now() - new Date(lastSuccessAt).getTime() < FRESH_MS
 }
 
 /** Spec §3.4: "התוסף לא מחובר כרגע" if no heartbeat in the last 5 minutes. */

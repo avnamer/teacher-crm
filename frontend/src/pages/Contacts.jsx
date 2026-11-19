@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { BulkSendModal } from './WhatsApp.jsx'
 import PendingApprovalAccordion from '../components/PendingApprovalAccordion.jsx'
 import WhatsAppSyncBanner from '../components/WhatsAppSyncBanner.jsx'
+import ProgressSyncBanner from '../components/ProgressSyncBanner.jsx'
 import AdminTasksPanel from '../components/AdminTasksPanel.jsx'
 import ManagementTasksPanel from '../components/ManagementTasksPanel.jsx'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
@@ -607,6 +608,8 @@ export default function Contacts() {
       />
 
       <WhatsAppSyncBanner />
+
+      <ProgressSyncBanner />
 
       <TaskStats stats={taskStats} />
 

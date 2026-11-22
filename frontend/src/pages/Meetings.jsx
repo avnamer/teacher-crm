@@ -599,6 +599,7 @@ export default function Meetings() {
     })),
   ].sort((a, b) => new Date(a.date) - new Date(b.date))
   const allSchools = [...new Set(contacts.map(c => c.school).filter(Boolean))]
+  const neverMetSchools = allSchools.filter(s => !lastAtBySchool[s])
   const buckets = { green: [], orange: [], red: [] }
   for (const school of allSchools) {
     buckets[schoolBucket(lastAtBySchool[school])].push(school)
@@ -683,7 +684,7 @@ export default function Meetings() {
           )}
 
           <div className="space-y-2">
-            {bySchool.length === 0 ? (
+            {bySchool.length === 0 && !(!month && neverMetSchools.length > 0) ? (
               <p className="text-gray-500 text-center py-8">{month ? 'אין פגישות בחודש הזה' : 'אין פגישות שתועדו'}</p>
             ) : (
               bySchool.map(schoolEntry => {
@@ -814,6 +815,17 @@ export default function Meetings() {
                 )
               })
             )}
+            {/* Schools with teachers but no recorded meeting at all — they sit in the red
+                banner, so they must also be visible in the list (not only on banner click). */}
+            {!month && neverMetSchools.map(school => (
+              <div key={school} className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-400" />
+                  <span className="font-medium text-gray-800">{school}</span>
+                </div>
+                <span className="text-xs text-gray-500">טרם תועדה פגישה</span>
+              </div>
+            ))}
           </div>
 
           {visibleAdmin.length > 0 && (

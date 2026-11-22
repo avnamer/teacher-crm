@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher, isAdminRow } from '../lib/teachers.js'
@@ -599,6 +599,19 @@ export default function Meetings() {
     })),
   ].sort((a, b) => new Date(a.date) - new Date(b.date))
   const allSchools = [...new Set(contacts.map(c => c.school).filter(Boolean))]
+  const neverMetSchools = month ? [] : allSchools.filter(s => !lastAtBySchool[s])
+  // Never-met schools sit with the red ones, i.e. right above the first orange/green school.
+  const firstNonRedIdx = bySchool.findIndex(e => schoolBucket(e.lastAt) !== 'red')
+  const neverMetInsertIdx = firstNonRedIdx === -1 ? bySchool.length : firstNonRedIdx
+  const neverMetRows = neverMetSchools.map(school => (
+    <div key={`never-${school}`} className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-400" />
+        <span className="font-medium text-gray-800">{school}</span>
+      </div>
+      <span className="text-xs text-gray-500">טרם תועדה פגישה</span>
+    </div>
+  ))
   const buckets = { green: [], orange: [], red: [] }
   for (const school of allSchools) {
     buckets[schoolBucket(lastAtBySchool[school])].push(school)
@@ -683,10 +696,11 @@ export default function Meetings() {
           )}
 
           <div className="space-y-2">
-            {bySchool.length === 0 ? (
+            {bySchool.length === 0 && neverMetSchools.length === 0 ? (
               <p className="text-gray-500 text-center py-8">{month ? 'אין פגישות בחודש הזה' : 'אין פגישות שתועדו'}</p>
             ) : (
-              bySchool.map(schoolEntry => {
+              <>
+              {bySchool.map((schoolEntry, idx) => {
                 const days = daysSince(schoolEntry.lastAt)
                 const color = schoolBucket(schoolEntry.lastAt)
                 const isOpen = openSchool === schoolEntry.school
@@ -705,7 +719,9 @@ export default function Meetings() {
                   'bg-green-400'
 
                 return (
-                  <div key={schoolEntry.school} className={`rounded-xl border overflow-hidden ${borderClass}`}>
+                  <Fragment key={schoolEntry.school}>
+                  {idx === neverMetInsertIdx && neverMetRows}
+                  <div className={`rounded-xl border overflow-hidden ${borderClass}`}>
                     <button
                       onClick={() => setOpenSchool(isOpen ? null : schoolEntry.school)}
                       className="w-full flex items-center justify-between px-4 py-3 text-right"
@@ -811,8 +827,11 @@ export default function Meetings() {
                       </div>
                     )}
                   </div>
+                  </Fragment>
                 )
-              })
+              })}
+              {neverMetInsertIdx >= bySchool.length && neverMetRows}
+              </>
             )}
           </div>
 

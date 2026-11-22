@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { analyzeManualMeeting } from '../lib/meetingAnalysis.js'
 import { createAdminMeeting } from '../lib/adminMeetings.js'
-import { OFFICE_LOCATION } from '../lib/meetings.js'
+import { OFFICE_LOCATION, VIDEO_LOCATION } from '../lib/meetings.js'
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
@@ -17,6 +17,8 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
   const [isAdmin, setIsAdmin] = useState(false)
   // Teacher meeting held at monday's office instead of at the school.
   const [atOffice, setAtOffice] = useState(false)
+  // Video meeting: logged as a meeting, but no trip — kept out of the trips report.
+  const [atVideo, setAtVideo] = useState(false)
   const [destination, setDestination] = useState('')
   const [distanceKm, setDistanceKm] = useState('')
   const [cost, setCost] = useState('')
@@ -77,7 +79,7 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
         metadata: {
           attendees: selected.filter(o => o.id !== t.id).map(o => o.name),
           meeting_group_id: meetingGroupId,
-          ...(atOffice ? { location: OFFICE_LOCATION } : {}),
+          ...(atOffice ? { location: OFFICE_LOCATION } : atVideo ? { location: VIDEO_LOCATION } : {}),
           saved_at: new Date().toISOString(),
           ...(isFuture ? { meeting_status: 'scheduled' } : {}),
         },
@@ -166,8 +168,15 @@ export default function AddMeetingModal({ teachers, onClose, onSaved, onAnalyzed
 
           {!isAdmin && (
             <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded-lg bg-gray-50">
-              <input type="checkbox" checked={atOffice} onChange={e => setAtOffice(e.target.checked)} className="w-4 h-4" />
+              <input type="checkbox" checked={atOffice} onChange={e => { setAtOffice(e.target.checked); if (e.target.checked) setAtVideo(false) }} className="w-4 h-4" />
               הפגישה במשרדי מאנדיי (לא בבית הספר)
+            </label>
+          )}
+
+          {!isAdmin && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded-lg bg-gray-50">
+              <input type="checkbox" checked={atVideo} onChange={e => { setAtVideo(e.target.checked); if (e.target.checked) setAtOffice(false) }} className="w-4 h-4" />
+              פגישת וידאו (ללא נסיעה — לא נכנסת לדוח נסיעות)
             </label>
           )}
 

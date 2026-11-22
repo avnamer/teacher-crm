@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import AddMeetingModal from '../components/AddMeetingModal.jsx'
 import { isMyTeacher, isAdminRow } from '../lib/teachers.js'
 import { teacherSchools } from '../lib/teams.js'
-import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId, OFFICE_LOCATION } from '../lib/meetings.js'
+import { isCompletedMeeting, isScheduledMeeting, groupMeetingsByGroupId, OFFICE_LOCATION, VIDEO_LOCATION } from '../lib/meetings.js'
 import { analyzeManualMeeting, needsMeetingAnalysis, findDuplicateMeetingClusters } from '../lib/meetingAnalysis.js'
 import MeetingMergeProposal from '../components/MeetingMergeProposal.jsx'
 import { isAdminMeeting, monthKey, updateAdminMeeting, deleteAdminMeeting } from '../lib/adminMeetings.js'
@@ -76,9 +76,10 @@ function attendeeIdsForRows(rowIds, meetings) {
 }
 
 // ─── Inline edit form shared by both the past-meetings and upcoming-meetings lists ──
-function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, initialSchool, initialAtOffice, teachers, onSave, onCancel, onDelete }) {
+function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, initialSchool, initialAtOffice, initialAtVideo, teachers, onSave, onCancel, onDelete }) {
   const [school, setSchool] = useState(initialSchool || '')
   const [atOffice, setAtOffice] = useState(!!initialAtOffice)
+  const [atVideo, setAtVideo] = useState(!!initialAtVideo)
   const [date, setDate] = useState(initialDate)
   const [content, setContent] = useState(initialContent)
   const [selectedTeacherIds, setSelectedTeacherIds] = useState(() => new Set(initialAttendeeIds))
@@ -115,7 +116,7 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, init
     }
     setSaving(true)
     try {
-      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds], school, atOffice })
+      await onSave({ date, content, isFuture: willBeScheduled, teacherIds: [...selectedTeacherIds], school, atOffice, atVideo })
     } finally {
       setSaving(false)
     }
@@ -182,11 +183,21 @@ function MeetingEditForm({ initialDate, initialContent, initialAttendeeIds, init
         <input
           type="checkbox"
           checked={atOffice}
-          onChange={e => setAtOffice(e.target.checked)}
+          onChange={e => { setAtOffice(e.target.checked); if (e.target.checked) setAtVideo(false) }}
           disabled={saving}
           className="w-3.5 h-3.5"
         />
         הפגישה במשרדי מאנדיי (לא בבית הספר)
+      </label>
+      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={atVideo}
+          onChange={e => { setAtVideo(e.target.checked); if (e.target.checked) setAtOffice(false) }}
+          disabled={saving}
+          className="w-3.5 h-3.5"
+        />
+        פגישת וידאו (ללא נסיעה — לא נכנסת לדוח נסיעות)
       </label>
       {schoolOptions.length > 1 && !atOffice && (
         <div>
@@ -431,7 +442,8 @@ export default function Meetings() {
   // for an unchecked one), and recomputes metadata.attendees on every surviving/new
   // row from the final selected set — then reloads so the recency banner / upcoming
   // list / past list all stay consistent.
-  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds, school, atOffice }) {
+  async function saveMeetingEdit(rowIds, { date, content, isFuture, teacherIds, school, atOffice, atVideo }) {
+    const locationMeta = atOffice ? { location: OFFICE_LOCATION } : atVideo ? { location: VIDEO_LOCATION } : {}
     const createdAt = new Date(`${date}T12:00:00`).toISOString()
     const trimmedContent = content.trim() || null
     try {
@@ -464,7 +476,7 @@ export default function Meetings() {
           } = existing.metadata || {}
           const metadata = {
             ...restMetadata,
-            ...(atOffice ? { location: OFFICE_LOCATION } : {}),
+            ...locationMeta,
             ...(school && !atOffice ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
@@ -479,7 +491,7 @@ export default function Meetings() {
           finalRowIds.push(existing.id)
         } else {
           const metadata = {
-            ...(atOffice ? { location: OFFICE_LOCATION } : {}),
+            ...locationMeta,
             ...(school && !atOffice ? { school } : {}),
             meeting_group_id: groupId,
             attendees,
@@ -565,7 +577,8 @@ export default function Meetings() {
     .filter(r => inMonth(r.created_at))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   const trips = !month ? [] : [
-    ...completedGroups.filter(g => g.date && monthKey(g.date) === month).map(g => ({
+    // Video meetings involved no travel, so they never appear in the trips report.
+    ...completedGroups.filter(g => g.date && monthKey(g.date) === month && !g.atVideo).map(g => ({
       key: g.groupId,
       date: g.date,
       place: g.atOffice ? 'משרדי מאנדיי' : g.schools.join(', ') || 'ללא בית ספר',
@@ -636,6 +649,7 @@ export default function Meetings() {
                       initialAttendeeIds={attendeeIdsForRows(g.rowIds, meetings)}
                       initialSchool={g.schoolOverride}
                       initialAtOffice={g.atOffice}
+                      initialAtVideo={g.atVideo}
                       teachers={contacts}
                       onSave={vals => saveMeetingEdit(g.rowIds, vals)}
                       onCancel={() => setEditingGroupId(null)}
@@ -650,6 +664,7 @@ export default function Meetings() {
                         ) : g.schools.length > 0 && (
                           <span className="text-xs text-gray-500 mr-2">{g.schools.join(', ')}</span>
                         )}
+                        {g.atVideo && <span className="text-xs text-gray-500 mr-2">💻 וידאו</span>}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-purple-700">
@@ -722,6 +737,7 @@ export default function Meetings() {
                                   initialAttendeeIds={attendeeIdsForRows(meetingGroup.rowIds, meetings)}
                                   initialSchool={meetingGroup.schoolOverride}
                                   initialAtOffice={meetingGroup.atOffice}
+                                  initialAtVideo={meetingGroup.atVideo}
                                   teachers={contacts}
                                   onSave={vals => saveMeetingEdit(meetingGroup.rowIds, vals)}
                                   onCancel={() => setEditingGroupId(null)}
@@ -745,6 +761,7 @@ export default function Meetings() {
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="font-medium text-gray-800">{schoolEntry.school}</span>
                                       <span className="text-sm font-medium text-blue-600">{meetingGroup.contactNames.join(', ')}</span>
+                                      {meetingGroup.atVideo && <span className="text-xs text-gray-500">💻 וידאו</span>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {mergeCluster && (

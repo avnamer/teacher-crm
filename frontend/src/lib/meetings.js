@@ -9,6 +9,13 @@ export function isOfficeMeeting(row) {
   return row.metadata?.location === OFFICE_LOCATION
 }
 
+export const VIDEO_LOCATION = 'video'
+
+/** A teacher meeting held over video — logged, but no trip happened (never in the trips report). */
+export function isVideoMeeting(row) {
+  return row.metadata?.location === VIDEO_LOCATION
+}
+
 /** A future meeting that hasn't been confirmed as having happened yet. */
 export function isScheduledMeeting(row) {
   return row.metadata?.meeting_status === 'scheduled'
@@ -38,9 +45,10 @@ export function groupMeetingsByGroupId(rows, contactsById) {
   const groups = {}
   for (const row of rows) {
     const groupId = row.metadata?.meeting_group_id || row.id
-    groups[groupId] ??= { groupId, date: row.created_at, rowIds: [], contactNames: [], schools: new Set(), schoolOverride: null, atOffice: false }
+    groups[groupId] ??= { groupId, date: row.created_at, rowIds: [], contactNames: [], schools: new Set(), schoolOverride: null, atOffice: false, atVideo: false }
     groups[groupId].rowIds.push(row.id)
     if (isOfficeMeeting(row)) groups[groupId].atOffice = true
+    if (isVideoMeeting(row)) groups[groupId].atVideo = true
     // A school picked by hand on the edit form (metadata.school) wins over the
     // attendees' own schools — for teachers who teach in two schools.
     if (row.metadata?.school) groups[groupId].schoolOverride = row.metadata.school

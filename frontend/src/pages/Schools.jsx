@@ -5,7 +5,9 @@ import { isAdminRow, isMyTeacher, isTaskDone, loadTaskColumns, TASK_SOURCE_LABEL
 import { fetchAdminTasks, setAdminTaskDone } from '../lib/adminTasks.js'
 import { interactionIcon, typeLabel } from '../lib/interactions.js'
 import { loadMondayDay, MONDAY_STATUSES } from '../lib/mondayDays.js'
-import { loadSchoolProgress, buildProgress, PASS_RATIO } from '../lib/schoolProgress.js'
+import { loadSchoolProgress, loadTeamProgress, buildProgress } from '../lib/schoolProgress.js'
+import { RoleColumn } from '../components/ProgressBars.jsx'
+import TeamProgress from '../components/TeamProgress.jsx'
 import { loadSchoolLocation, saveSchoolLocation, clearSchoolLocation, mapsPinUrl } from '../lib/schoolLocations.js'
 import { allSchools, teacherSchools, teamsInSchool, studentCount, formatTeam } from '../lib/teams.js'
 import {
@@ -171,71 +173,6 @@ function formatAsOf(iso) {
   return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-const shortDate = iso => new Date(iso).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' }).replace(/\//g, '.')
-
-// Black ticks on the bar = the value at earlier syncs (newest sync darkest). A tick that equals the current value is
-// not drawn (buildProgress drops it), so an unchanged bar shows only its own end. A tick to the right of the bar's end
-// means the number went DOWN since that sync (drawn red).
-function PreviousTicks({ item, total }) {
-  if (!item.previous?.length) return null
-  let lastLabelAt = null
-  return item.previous.map(p => {
-    const pos = Math.min(100, p.percent ?? 0)
-    const showLabel = lastLabelAt === null || Math.abs(pos - lastLabelAt) >= 9
-    if (showLabel) lastLabelAt = pos
-    const dropped = p.entered > item.entered
-    const color = dropped ? 'bg-red-500' : p.rank === 0 ? 'bg-black' : 'bg-gray-500'
-    return (
-      <div key={p.asOf} className="absolute -top-3 bottom-0 pointer-events-none" style={{ right: `${pos}%` }}
-        title={`${shortDate(p.asOf)}: ${p.entered}${total > 0 ? ` מתוך ${total}` : ''}${p.percent !== null ? ` · ${p.percent}%` : ''}`}>
-        <div className={`absolute inset-y-0 w-0.5 ${color}`} />
-        {showLabel && (
-          <span className={`absolute top-0 text-[9px] leading-none whitespace-nowrap ${dropped ? 'text-red-600' : p.rank === 0 ? 'text-black' : 'text-gray-500'}`}
-            style={{ transform: 'translateX(50%)', right: 0 }}>{shortDate(p.asOf)}</span>
-        )}
-      </div>
-    )
-  })
-}
-
-function ProgressBar({ item, total }) {
-  const pct = item.percent ?? 0
-  const hasTicks = item.previous?.length > 0
-  return (
-    <div className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm ${hasTicks ? 'pt-3' : ''}`}>
-      <span className="sm:w-72 shrink-0 text-gray-700 truncate" title={item.label}>{item.label}</span>
-      <div className="relative flex-1 min-w-16 h-3">
-        <div className="absolute inset-0 bg-gray-100 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${item.passed ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
-          <div className="absolute inset-y-0 w-px bg-gray-400" style={{ right: `${PASS_RATIO * 100}%` }} title="33%" />
-        </div>
-        <PreviousTicks item={item} total={total} />
-      </div>
-      <span className="sm:w-32 shrink-0 text-gray-600 text-xs">
-        {item.entered}{total > 0 ? ` מתוך ${total}` : ''}{item.percent !== null && ` · ${item.percent}%`}
-      </span>
-    </div>
-  )
-}
-
-function RoleColumn({ title, data, total, totalNote }) {
-  return (
-    <div className="space-y-2">
-      <h4 className="text-sm font-semibold text-gray-800">
-        {title} <span className="font-normal text-gray-500">({totalNote})</span>
-      </h4>
-      {!data ? <p className="text-sm text-gray-400">אין נתונים</p> : (
-        <>
-          {data.summary && (
-            <div className="font-medium"><ProgressBar item={{ ...data.summary, label: 'נכנסו לאתגר' }} total={total} /></div>
-          )}
-          {data.units.map(u => <ProgressBar key={u.label} item={u} total={total} />)}
-        </>
-      )}
-    </div>
-  )
-}
-
 function ProgressBanner({ school, teachers }) {
   const [rows, setRows] = useState(undefined) // undefined = loading
   const [error, setError] = useState('')
@@ -247,6 +184,24 @@ function ProgressBanner({ school, teachers }) {
     setRole(value)
     try { localStorage.setItem('progressRole', value) } catch { /* private mode */ }
   }
+
+  const [teamRows, setTeamRows] = useState([])
+  const [teamError, setTeamError] = useState('')
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem('progressView') === 'teams' ? 'teams' : 'school' } catch { return 'school' }
+  })
+  function pickView(value) {
+    setView(value)
+    try { localStorage.setItem('progressView', value) } catch { /* private mode */ }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    loadTeamProgress(school)
+      .then(r => { if (!cancelled) setTeamRows(r) })
+      .catch(err => { console.error('Error loading team progress:', err); if (!cancelled) setTeamError(err.message) })
+    return () => { cancelled = true }
+  }, [school])
 
   useEffect(() => {
     let cancelled = false
@@ -266,6 +221,7 @@ function ProgressBanner({ school, teachers }) {
   if (error) return <p className="text-sm text-red-600">{error}</p>
   if (rows.length === 0) return null
   const [current, ...older] = progress.challenges
+  const showTeams = view === 'teams' && teamRows.length > 0
 
   return (
     <section className="bg-gradient-to-l from-blue-50 to-white rounded-xl shadow-sm border border-blue-200 p-4 sm:p-6 space-y-4">
@@ -273,14 +229,14 @@ function ProgressBanner({ school, teachers }) {
         <h2 className="text-lg font-semibold text-gray-800">🚀 התקדמות בתוכנית: {current.name}</h2>
         <span className="text-xs text-gray-500">הנתונים נשאבו: {formatAsOf(progress.asOf)}</span>
       </div>
-      <div className="inline-flex rounded-lg border border-blue-200 bg-white p-0.5 text-sm">
-        {[['students', '🎓 תלמידים'], ['teachers', '👩‍🏫 מורים']].map(([value, label]) => (
-          <button key={value} onClick={() => pickRole(value)}
-            className={`px-4 py-1.5 rounded-md ${role === value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-3">
+        <Toggle value={role} onPick={pickRole} options={[['students', '🎓 תלמידים'], ['teachers', '👩‍🏫 מורים']]} />
+        {teamRows.length > 0 && (
+          <Toggle value={view} onPick={pickView} options={[['school', '🏫 לפי בית ספר'], ['teams', '🏆 לפי נבחרת']]} />
+        )}
       </div>
+      {teamError && <p className="text-sm text-red-600">שגיאה בטעינת הנתונים לפי נבחרת: {teamError}</p>}
+      {showTeams ? <TeamProgress rows={teamRows} teachers={teachers} school={school} role={role} /> : (<>
       <RoleColumn title={role === 'students' ? '🎓 תלמידים' : '👩‍🏫 מורים'} data={current[role]} total={totals[role]}
         totalNote={role === 'teachers' ? `${totals.teachers} מורים`
           : totals.students > 0 ? `${totals.students} תלמידים בנבחרות` : 'לא הוזן מספר תלמידים בנבחרות'} />
@@ -298,7 +254,21 @@ function ProgressBanner({ school, teachers }) {
           </div>
         </details>
       ))}
+      </>)}
     </section>
+  )
+}
+
+function Toggle({ value, onPick, options }) {
+  return (
+    <div className="inline-flex rounded-lg border border-blue-200 bg-white p-0.5 text-sm">
+      {options.map(([option, label]) => (
+        <button key={option} onClick={() => onPick(option)}
+          className={`px-4 py-1.5 rounded-md ${value === option ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 

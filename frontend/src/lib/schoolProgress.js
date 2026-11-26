@@ -12,12 +12,34 @@ const isMissingTable = error => error?.code === '42P01' || error?.code === 'PGRS
 
 export async function loadSchoolProgress(school) {
   const { data, error } = await supabase
-    .from('school_challenge_progress').select('*').eq('school', school).order('position', { ascending: true })
+    .from('school_challenge_progress').select('*').eq('school', school)
+    .order('as_of', { ascending: false }).order('position', { ascending: true }) // newest first: the row cap cuts old syncs
   if (error) {
     if (isMissingTable(error)) throw new Error('טבלת school_challenge_progress עדיין לא קיימת — הרץ את בלוק ה-SQL האחרון מ-supabase-setup.sql')
     throw error
   }
   return data || []
+}
+
+const PAGE = 1000 // Supabase returns at most this many rows per request; a school has hundreds of team rows per sync
+
+/** Every sync of the school's per-team rows. [] until the table exists or a by-team file was imported. */
+export async function loadTeamProgress(school) {
+  const all = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('school_team_progress').select('*').eq('school', school)
+      .order('as_of', { ascending: false }).order('team').order('role').order('position').order('challenge').order('unit')
+      .range(from, from + PAGE - 1)
+    if (error) {
+      if (isMissingTable(error)) return []
+      throw error
+    }
+    all.push(...(data || []))
+    if (!data || data.length < PAGE) break
+  }
+  // buildProgress lists courses and units in row order.
+  return all.sort((a, b) => a.position - b.position)
 }
 
 const challengeNumber = name => {

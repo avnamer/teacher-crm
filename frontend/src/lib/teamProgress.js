@@ -27,7 +27,7 @@ export function matchTeacher(name, teachers) {
 export function crmStudentsPerTeam(crmCounts, lmsTeamCount) {
   if (lmsTeamCount === 1) {
     const sum = crmCounts.reduce((a, b) => a + b, 0)
-    return [sum > 0 && crmCounts.every(n => n > 0) ? sum : null]
+    return [sum > 0 ? sum : null]
   }
   if (crmCounts.length === lmsTeamCount) return crmCounts.map(n => (n > 0 ? n : null))
   return Array(lmsTeamCount).fill(null)
@@ -81,7 +81,9 @@ export function buildTeams(rows, teachers, school) {
   for (const own of byOwner.values()) {
     const crmCounts = own[0].teacher ? teamsInSchool(own[0].teacher, school).map(studentCount) : []
     const crm = crmStudentsPerTeam(crmCounts, own.length)
+    const crmTotal = crmCounts.reduce((a, b) => a + b, 0)
     own.forEach((t, i) => {
+      t.crmTeacherTotal = crmTotal
       t.crmStudents = crm[i]
       t.totals = { students: crm[i] ?? t.lmsStudents, teachers: t.teacherCount }
       t.hasTeacherRows = t.teacherCount > 0
@@ -91,7 +93,8 @@ export function buildTeams(rows, teachers, school) {
 
   const multiTeamTeachers = [...byOwner.values()].filter(own => own.length > 1).map(own => {
     const totals = {
-      students: own.reduce((n, t) => n + t.totals.students, 0),
+      // The CRM headcount wins whenever it exists, even if it couldn't be split between the teams.
+      students: own[0].crmTeacherTotal || own.reduce((n, t) => n + t.totals.students, 0),
       teachers: own.reduce((n, t) => n + t.totals.teachers, 0),
     }
     return {

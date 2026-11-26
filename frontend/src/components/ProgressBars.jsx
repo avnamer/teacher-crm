@@ -30,22 +30,31 @@ function PreviousTicks({ item, total }) {
   })
 }
 
-export function ProgressBar({ item, total }) {
+/** The bar itself with the 33% line and the history ticks (leave room above it for the tick dates). */
+export function ProgressTrack({ item, total, className = '' }) {
   const pct = item.percent ?? 0
+  return (
+    <div className={`relative h-3 ${className}`}>
+      <div className="absolute inset-0 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${item.passed ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+        <div className="absolute inset-y-0 w-px bg-gray-400" style={{ right: `${PASS_RATIO * 100}%` }} title="33%" />
+      </div>
+      <PreviousTicks item={item} total={total} />
+    </div>
+  )
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const progressText = (item, total) =>
+  `${item.entered}${total > 0 ? ` מתוך ${total}` : ''}${item.percent !== null ? ` · ${item.percent}%` : ''}`
+
+export function ProgressBar({ item, total }) {
   const hasTicks = item.previous?.length > 0
   return (
     <div className={`flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm ${hasTicks ? 'pt-3' : ''}`}>
       <span className="sm:w-72 shrink-0 text-gray-700 truncate" title={item.label}>{item.label}</span>
-      <div className="relative flex-1 min-w-16 h-3">
-        <div className="absolute inset-0 bg-gray-100 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${item.passed ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
-          <div className="absolute inset-y-0 w-px bg-gray-400" style={{ right: `${PASS_RATIO * 100}%` }} title="33%" />
-        </div>
-        <PreviousTicks item={item} total={total} />
-      </div>
-      <span className="sm:w-32 shrink-0 text-gray-600 text-xs">
-        {item.entered}{total > 0 ? ` מתוך ${total}` : ''}{item.percent !== null && ` · ${item.percent}%`}
-      </span>
+      <ProgressTrack item={item} total={total} className="flex-1 min-w-16" />
+      <span className="sm:w-32 shrink-0 text-gray-600 text-xs">{progressText(item, total)}</span>
     </div>
   )
 }

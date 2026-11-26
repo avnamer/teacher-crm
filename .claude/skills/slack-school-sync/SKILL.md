@@ -31,7 +31,7 @@ asking more often returns the same "נכון ל" timestamp — that is expected,
    then type the rest of the prompt. Use `shift+Return` for line breaks (plain Enter sends).
    Send with Enter. Prompt (after the mention):
 
-   > צרי לי קובץ CSV עם נתוני ההתקדמות של התלמידים והמורים בבתי הספר שלי. תוכנית: תלת מימד, ליגת מרכז. בתי הספר: אולפנית מבשרת ברוך, אל-בירוני גת, בית ספר למחוננים בקה, התיכון ב' טירה, אבן אל-הית'ם בקה, עמל טייבה, אל-אנדלוס בקה, אל-נג'אח טייבה, תיכון חטיבה חדרה, אמית נתיבות דרור. קורסים: אתגר 00, אתגר 01. בנוסף אם אתגר 2 או 3 או 4 גם נפתחו אז שלחי לי גם את המידע עליהם. כל היחידות. לכל בית ספר, תפקיד (תלמידים ומורים) ויחידה: כמה רשומים, כמה נכנסו ליחידה, אחוז מהרשומים, והאם עברו 33%. תוסיפי עמודה "נכון ל" עם תאריך ושעת הנתונים. תשלחי קישור להורדה שעובד ישירות מסלאק, ולצידו שתי טבלאות סיכום: אחת לתלמידים ואחת למורים, עם היחידה הרחוקה ביותר שעברה 33% בכל בית ספר.
+   > צרי לי קובץ CSV עם נתוני ההתקדמות של התלמידים והמורים בבתי הספר שלי **לפי נבחרת**, עם עמודות "נבחרת" ו"שם המורה" (לכל בית ספר, נבחרת, תפקיד ויחידה). תוכנית: תלת מימד, ליגת מרכז. בתי הספר: אולפנית מבשרת ברוך, אל-בירוני גת, בית ספר למחוננים בקה, התיכון ב' טירה, אבן אל-הית'ם בקה, עמל טייבה, אל-אנדלוס בקה, אל-נג'אח טייבה, תיכון חטיבה חדרה, אמית נתיבות דרור. קורסים: אתגר 00, אתגר 01. בנוסף אם אתגר 2 או 3 או 4 גם נפתחו אז שלחי לי גם את המידע עליהם. כל היחידות. לכל בית ספר, תפקיד (תלמידים ומורים) ויחידה: כמה רשומים, כמה נכנסו ליחידה, אחוז מהרשומים, והאם עברו 33%. תוסיפי עמודה "נכון ל" עם תאריך ושעת הנתונים. תשלחי קישור להורדה שעובד ישירות מסלאק, ולצידו שתי טבלאות סיכום: אחת לתלמידים ואחת למורים, עם היחידה הרחוקה ביותר שעברה 33% בכל בית ספר.
    >
    > אם הקישור לא נפתח, כתוב "הקישור לא נפתח" ואשלח חדש.
 
@@ -40,8 +40,9 @@ asking more often returns the same "נכון ל" timestamp — that is expected,
    files.monday.com, a presigned URL valid ~1 hour). If the link fails, reply in the thread
    "הקישור לא נפתח" and wait for a new one.
 5. Download into a **new empty folder in the scratchpad** with `curl -sS --fail -o <dir>/school_progress_3d_center.csv "<url>"`.
-   Check size / `wc -l` / header: `נכון ל,בית ספר,תפקיד,רשומים,קורס,יחידה,נכנסו ליחידה,אחוז מהרשומים,עבר 33%`.
-6. Dry run: `node scripts/import-school-progress.mjs <csv>`. Report rows, school count and the "נכון ל" date.
+   Check size / `wc -l` / header (columns are read by name): `בית ספר,נבחרת,שם המורה (שם פרטי),תפקיד,קורס,יחידה,רשומים,נכנסו ליחידה,אחוז מהרשומים,הגיעו ל-33%,נכון ל`.
+   Without a `נבחרת` column the script treats it as the old school-level file — the per-team view won't update.
+6. Dry run: `node scripts/import-school-progress.mjs <csv>`. Report rows, school count, team count (21 on 2026-11-25) and the "נכון ל" date.
    - If "נכון ל" equals the date of the last import → tell the user nothing is new (Gaya refreshes weekly) and stop unless they want it anyway.
    - Unknown school name → script aborts; add the alias to `scripts/school-progress-aliases.json` (CRM name is the target) after confirming the match with the user, then re-run.
    - Note Gaya has hallucinated a school name before ("התיכון הטכנולוגי חדרה" instead of "תיכון חטיבה חדרה"); the CRM name is the source of truth.
@@ -50,6 +51,8 @@ asking more often returns the same "נכון ל" timestamp — that is expected,
    (Schools page) reads the table — nothing to deploy (data only, no code change, no Netlify credits).
 
 ## Notes
+- By-team files write two tables: `school_team_progress` (everything) and `school_challenge_progress` (school sum, אתגר courses only). Teacher first names come from the LMS and are matched to CRM teachers in the app; if the Schools page shows "לא נמצא מורה מתאים ב-CRM", the CRM name differs from the file.
+- Since about 2026-11-26 Gaya may append "The files could not be attached" — the link in her message still works.
 - Needs `backend/.env` with `SUPABASE_SERVICE_KEY`; the script bypasses RLS and adds a snapshot (needs the PK-with-`as_of` migration from the end of `supabase-setup.sql`, run once in the Supabase SQL editor).
 - Gaya cannot be scheduled from here; a fully automatic sync would need her owner (גיא מזרחי) to
   grant API/MCP access, or a Slack app token — out of scope for this skill.

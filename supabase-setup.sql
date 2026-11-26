@@ -490,3 +490,25 @@ UPDATE school_challenge_progress SET as_of = now() WHERE as_of IS NULL;
 ALTER TABLE school_challenge_progress ALTER COLUMN as_of SET NOT NULL;
 ALTER TABLE school_challenge_progress DROP CONSTRAINT IF EXISTS school_challenge_progress_pkey;
 ALTER TABLE school_challenge_progress ADD PRIMARY KEY (school, role, challenge, unit, as_of);
+
+-- ─────────────────────────────────────────────────────────────
+-- התקדמות לפי נבחרת (ומורה). כמו school_challenge_progress בתוספת מספר הנבחרת בבית הספר (כפי שהוא במערכת
+-- הלמידה) ושם המורה כפי שהוא בקובץ. מכילה את כל הקורסים (גם קורסים למורים). טבלה נפרדת כדי ש-
+-- school_challenge_progress תישאר ברמת בית ספר (סכום הנבחרות). נכתבת רק ע"י scripts/import-school-progress.mjs.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS school_team_progress (
+  school TEXT NOT NULL,
+  csv_school TEXT,
+  team INT NOT NULL,
+  teacher_name TEXT,
+  role TEXT NOT NULL CHECK (role IN ('students','teachers')),
+  challenge TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  position INT NOT NULL DEFAULT 0,
+  registered INT NOT NULL DEFAULT 0,
+  entered INT NOT NULL DEFAULT 0,
+  as_of TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (school, team, role, challenge, unit, as_of)
+);
+ALTER TABLE school_team_progress ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Owner read only" ON school_team_progress FOR SELECT USING (auth.jwt() ->> 'email' = 'avnamer@gmail.com');
